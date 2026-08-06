@@ -75,26 +75,6 @@
     window.applicationPrincipale = applicationPrincipale;
   </script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
-  <script>
-window.onerror = function(message, source, line, column, error) {
-  document.body.innerHTML =
-    "<pre style='white-space:pre-wrap;padding:16px;background:#fff;color:red;font-size:14px'>" +
-    "MESSAGE : " + message + "\n\n" +
-    "SOURCE  : " + source + "\n\n" +
-    "LIGNE   : " + line + "\n\n" +
-    "COLONNE : " + column + "\n\n" +
-    (error && error.stack ? error.stack : "") +
-    "</pre>";
-};
-
-window.addEventListener("unhandledrejection", function(e) {
-  document.body.innerHTML =
-    "<pre style='white-space:pre-wrap;padding:16px;background:#fff;color:red;font-size:14px'>" +
-    "PROMISE REJETÉE\n\n" +
-    (e.reason && e.reason.stack ? e.reason.stack : String(e.reason)) +
-    "</pre>";
-});
-</script>
 </head>
 <body class="bg-slate-50 min-h-screen">
   <div x-data="applicationPrincipale()" x-init="init()" x-show="utilisateurCharge" class="min-h-screen flex flex-col">
