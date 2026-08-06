@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connexion — CCEEH</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    function loginPage() {
+      return {
+        email: "",
+        motDePasse: "",
+        messageErreur: "",
+        enCours: false,
+        _firebasePret: null,
+        _connexion: null,
+
+        init() {
+          this._firebasePret = this._chargerFirebase();
+        },
+
+        async _chargerFirebase() {
+          const [{ connexion }] = await Promise.all([import("./js/firebase-init.js")]);  
+          this._connexion = connexion;
+        },
+
+        async seConnecter() {
+          this.messageErreur = "";
+          this.enCours = true;
+          try {
+            await this._firebasePret; // attend que Firebase soit chargé
+            await this._connexion(this.email, this.motDePasse);
+            window.location.href = "index.html";
+          } catch (erreur) {
+            this.messageErreur = "Email ou mot de passe incorrect.";
+          } finally {
+            this.enCours = false;
+          }
+        },
+      };
+    }
+    window.loginPage = loginPage;
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center">
+  <div x-data="loginPage()" x-init="init()" class="w-full max-w-sm">
+    <div class="bg-white rounded-lg shadow-md p-8">
+      <div class="text-center mb-8">
+        <img src="logo-cceeh.png" class="h-24 mx-auto mb-4" alt="Logo CCEEH">
+        <h1 class="text-2xl font-bold text-center mb-6">Connexion administrateur</h1>
+      </div>
+      <form @submit.prevent="seConnecter()" class="space-y-4">
+        <div>
+          <label for="email" class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <input id="email" type="email" x-model="email" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" placeholder="Adresse e-mail"/>
+        </div>
+        <div>
+          <label for="motDePasse" class="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
+          <input id="motDePasse" type="password" x-model="motDePasse" required
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"/>
+        </div>
+        <div x-show="messageErreur" x-cloak class="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2" x-text="messageErreur"></div>
+        <button type="submit" :disabled="enCours"
+          class="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md py-2 transition-colors flex items-center justify-center gap-2">
+          <!-- Indicateur de chargement intégré -->
+          <svg x-show="enCours" x-cloak class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+          <span x-text="enCours ? 'Connexion…' : 'Se connecter'"></span>
+        </button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,30 @@
+[x-cloak] {
+  display: none !important;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .zone-impression,
+  .zone-impression * {
+    visibility: visible;
+  }
+
+  .zone-impression {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

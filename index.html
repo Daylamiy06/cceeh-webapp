@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCEEH — Gestion des habitants</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css"/>
+  <script>
+    function applicationPrincipale() {
+      return {
+        utilisateurCharge: false,
+        chargementPage: false,
+        sectionActive: "dashboard",
+        sections: [
+          { id: "dashboard", libelle: "Tableau de bord", url: "pages/dashboard.html" },
+          { id: "habitants", libelle: "Gestion des habitants", url: "pages/habitants.html" },
+          { id: "bilans", libelle: "Bilans statistiques", url: "pages/bilans.html" },
+          { id: "referentiels", libelle: "Gestion des référentiels", url: "pages/referentiels.html" },
+        ],
+        _protegerPage: null,
+        _deconnexion: null,
+
+        async init() {
+          const [{ protegerPage, deconnexion }, { assurerAmorcageReferentiels }] = await Promise.all([
+              import("./js/firebase-init.js"),
+              import("./js/seed-referentiels.js"),
+           ]);
+          this._deconnexion = deconnexion;
+          protegerPage(async () => {
+            await assurerAmorcageReferentiels();
+            this.utilisateurCharge = true;
+            this.allerA("dashboard");
+          });
+        },
+
+        async allerA(idSection) {
+          const section = this.sections.find((s) => s.id === idSection);
+          if (!section) return;
+          this.sectionActive = idSection;
+          this.chargementPage = true;
+          try {
+            const reponse = await fetch(section.url);
+            const html = await reponse.text();
+            document.getElementById("zone-affichage").innerHTML = html;
+            document
+              .getElementById("zone-affichage")
+              .querySelectorAll("script")
+              .forEach((ancien) => {
+                const nouveau = document.createElement("script");
+                if (ancien.type) nouveau.type = ancien.type;
+                if (ancien.src) {
+                  nouveau.src = ancien.src;
+                } else {
+                  nouveau.textContent = ancien.textContent;
+                }
+                ancien.replaceWith(nouveau);
+              });
+          } catch (erreur) {
+            document.getElementById("zone-affichage").innerHTML = `
+              <div class="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+                Impossible de charger cette page. Vérifiez votre connexion et réessayez.
+              </div>`;
+          } finally {
+            this.chargementPage = false;
+          }
+        },
+
+        async seDeconnecter() {
+          await this._deconnexion();
+          window.location.href = "login.html";
+        },
+      };
+    }
+    window.applicationPrincipale = applicationPrincipale;
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script>
+window.onerror = function(message, source, line, column, error) {
+  document.body.innerHTML =
+    "<pre style='white-space:pre-wrap;padding:16px;background:#fff;color:red;font-size:14px'>" +
+    "MESSAGE : " + message + "\n\n" +
+    "SOURCE  : " + source + "\n\n" +
+    "LIGNE   : " + line + "\n\n" +
+    "COLONNE : " + column + "\n\n" +
+    (error && error.stack ? error.stack : "") +
+    "</pre>";
+};
+
+window.addEventListener("unhandledrejection", function(e) {
+  document.body.innerHTML =
+    "<pre style='white-space:pre-wrap;padding:16px;background:#fff;color:red;font-size:14px'>" +
+    "PROMISE REJETÉE\n\n" +
+    (e.reason && e.reason.stack ? e.reason.stack : String(e.reason)) +
+    "</pre>";
+});
+</script>
+</head>
+<body class="bg-slate-50 min-h-screen">
+  <div x-data="applicationPrincipale()" x-init="init()" x-show="utilisateurCharge" class="min-h-screen flex flex-col">
+    <header class="bg-slate-800 text-white no-print">
+      <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-8">
+          <span class="font-semibold tracking-wide">CCEEH</span>
+          <nav class="flex gap-1">
+            <template x-for="item in sections" :key="item.id">
+              <button @click="allerA(item.id)" :class="sectionActive === item.id ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'"
+                class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors" x-text="item.libelle">
+              </button>
+            </template>
+          </nav>
+        </div>
+        <button @click="seDeconnecter()"
+          class="text-sm text-slate-300 hover:text-white transition-colors">Déconnexion
+        </button>
+      </div>
+    </header>
+    <main class="flex-1 max-w-7xl w-full mx-auto px-6 py-6">
+      <!-- Indicateur de chargement pendant le fetch d'une page fille -->
+      <div x-show="chargementPage" x-cloak class="flex justify-center py-16">
+        <svg class="animate-spin h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </div>
+      <div x-show="!chargementPage" id="zone-affichage"></div>
+    </main>
+  </div>
+</body>
+</html>
