@@ -1,0 +1,230 @@
+<script>
+  function pageReferentiels() {
+    return {
+      REFERENTIELS: [],
+      chargement: true,
+      ongletActif: "civilites",
+      valeursParReferentiel: {},
+      arreterEcoutes: [],
+      nouvelleValeur: "",
+      idEnEdition: null,
+      libelleEnEdition: "",
+      confirmationSuppression: { ouverte: false, message: "", action: null },
+      messageErreur: "",
+      messageSucces: "",
+      _db: null,
+      _ref: null,
+      _get: null,
+      _ecouterReferentiel: null,
+      _ajouterValeur: null,
+      _modifierValeur: null,
+      _supprimerValeur: null,
+
+      async init() {
+        const [modFirebase, modReferentiels] = await Promise.all([
+          import("../js/firebase-init.js"),
+          import("../js/referentiels.js"),
+        ]);
+
+        this._db = modFirebase.db;
+        this._ref = modFirebase.ref;
+        this._get = modFirebase.get;
+        this._ecouterReferentiel = modReferentiels.ecouterReferentiel;
+        this._ajouterValeur = modReferentiels.ajouterValeur;
+        this._modifierValeur = modReferentiels.modifierValeur;
+        this._supprimerValeur = modReferentiels.supprimerValeur;
+        this.REFERENTIELS = modReferentiels.REFERENTIELS;
+        this.arreterEcoutes = this.REFERENTIELS.map((referentiel) =>
+          this._ecouterReferentiel(referentiel.cle, (valeurs) => {
+            this.valeursParReferentiel[referentiel.cle] = valeurs;
+            this.chargement = false;
+          })
+        );
+
+        const conteneur = document.getElementById("zone-affichage");
+        if (conteneur) {
+          const observateur = new MutationObserver(() => {
+            if (!document.body.contains(this.$root)) {
+              this.arreterEcoutes.forEach((arreter) => arreter());
+              observateur.disconnect();
+            }
+          });
+          observateur.observe(conteneur, { childList: true });
+        }
+      },
+
+      get valeursDeLOngletActif() {
+        return this.valeursParReferentiel[this.ongletActif] || [];
+      },
+
+      // Ajout 
+      async ajouter() {
+        const libelle = this.nouvelleValeur.trim();
+        if (!libelle) return;
+
+        await this._ajouterValeur(this.ongletActif, libelle);
+        this.nouvelleValeur = "";
+        this.afficherMessageSucces("Valeur ajoutée avec succès.");
+      },
+
+      // Modification 
+      commencerModification(valeur) {
+        this.idEnEdition = valeur.id;
+        this.libelleEnEdition = valeur.libelle;
+      },
+
+      annulerModification() {
+        this.idEnEdition = null;
+        this.libelleEnEdition = "";
+      },
+
+      async validerModification() {
+        const libelle = this.libelleEnEdition.trim();
+        if (!libelle) return;
+
+        await this._modifierValeur(this.ongletActif, this.idEnEdition, libelle);
+        this.annulerModification();
+        this.afficherMessageSucces("Valeur modifiée avec succès.");
+      },
+
+      // Suppression : refusée si la valeur est utilisée par une fiche existante 
+      demanderSuppression(valeur) {
+        this.confirmationSuppression = {
+          ouverte: true,
+          message: `Supprimer la valeur « ${valeur.libelle} » ?`,
+          action: async () => {
+            try {
+              await this._supprimerValeur(this.ongletActif, valeur.id, () =>
+                this.valeurEstUtilisee(this.ongletActif, valeur.libelle)
+              );
+              this.afficherMessageSucces("Valeur supprimée.");
+            } catch (erreur) {
+              this.afficherMessageErreur(erreur.message);
+            }
+          },
+        };
+      },
+
+      annulerSuppression() {
+        this.confirmationSuppression = { ouverte: false, message: "", action: null };
+      },
+
+      async confirmerSuppression() {
+        const action = this.confirmationSuppression.action;
+        this.confirmationSuppression = { ouverte: false, message: "", action: null };
+        if (action) await action();
+      },
+
+      /** Une valeur ne peut être supprimée que si elle n'est utilisée par aucune fiche existante */
+      async valeurEstUtilisee(cleReferentiel, libelle) {
+        const correspondanceChamp = {
+          civilites: { collection: "habitants", champ: "civilite" },
+          statuts: { collection: "habitants", champ: "statut_actuel" },
+          niveaux_etude: { collection: "parcours", champ: "niveau_etude" },
+          diplomes: { collection: "parcours", champ: "diplome" },
+          professions: { collection: "activites", champ: "profession" },
+          secteurs: { collection: "activites", champ: "secteur" },
+        };
+
+        const { collection, champ } = correspondanceChamp[cleReferentiel];
+        const snapshot = await this._get(this._ref(this._db, collection));
+        if (!snapshot.exists()) return false;
+        return Object.values(snapshot.val()).some((fiche) => fiche[champ] === libelle);
+      },
+
+      afficherMessageSucces(texte) {
+        this.messageSucces = texte;
+        setTimeout(() => { this.messageSucces = ""; }, 3000);
+      },
+
+      afficherMessageErreur(texte) {
+        this.messageErreur = texte;
+        setTimeout(() => { this.messageErreur = ""; }, 4000);
+      },
+    };
+  }
+  window.pageReferentiels = pageReferentiels;
+</script>
+
+<div x-data="pageReferentiels()" x-init="init()">
+  <h1 class="text-lg font-semibold text-slate-800 mb-6">Gestion des référentiels</h1>
+
+  <!-- Onglets, un par référentiel -->
+  <div class="flex gap-1 border-b border-slate-200 mb-6 no-print flex-wrap">
+    <template x-for="ref in REFERENTIELS" :key="ref.cle">
+      <button @click="ongletActif = ref.cle" :class="ongletActif === ref.cle ? 'border-b-2 border-slate-800 text-slate-800' : 'text-slate-500 hover:text-slate-700'"
+        class="px-4 py-2 text-sm font-medium transition-colors" x-text="ref.libelle">
+      </button>
+    </template>
+  </div>
+
+  <!-- Indicateur de chargement -->
+  <div x-show="chargement" x-cloak class="flex justify-center py-16">
+    <svg class="animate-spin h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+    </svg>
+  </div>
+  <div x-show="!chargement" x-cloak class="max-w-lg">
+
+    <!-- Ajout d'une valeur -->
+    <form @submit.prevent="ajouter()" class="flex gap-2 mb-6 no-print">
+      <input type="text" x-model="nouvelleValeur" placeholder="Nouvelle valeur…"
+        class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"/>
+      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 transition-colors">Ajouter</button>
+    </form>
+
+    <!-- Liste vide -->
+    <div x-show="valeursDeLOngletActif.length === 0" x-cloak
+      class="text-center text-sm text-slate-500 py-12 border border-dashed border-slate-300 rounded-md">Aucune valeur enregistrée pour ce référentiel.
+    </div>
+
+    <!-- Liste des valeurs, avec modification en ligne et suppression -->
+    <ul x-show="valeursDeLOngletActif.length > 0" x-cloak class="divide-y divide-slate-200 border border-slate-200 rounded-md">
+      <template x-for="valeur in valeursDeLOngletActif" :key="valeur.id">
+        <li class="flex items-center justify-between px-4 py-2.5">
+          <!-- Affichage normal -->
+          <span x-show="idEnEdition !== valeur.id" x-text="valeur.libelle" class="text-sm text-slate-700"></span>
+          <!-- Champ d'édition en ligne -->
+          <input x-show="idEnEdition === valeur.id" x-cloak type="text" x-model="libelleEnEdition" @keydown.enter="validerModification()" @keydown.escape="annulerModification()"
+            class="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm mr-2"/>
+          <div class="flex gap-3 no-print">
+            <template x-if="idEnEdition !== valeur.id">
+              <div class="flex gap-3">
+                <button @click="commencerModification(valeur)" class="text-sm text-slate-600 hover:text-slate-900">Modifier</button>
+                <button @click="demanderSuppression(valeur)" class="text-sm text-red-600 hover:text-red-800">Supprimer</button>
+              </div>
+            </template>
+            <template x-if="idEnEdition === valeur.id">
+              <div class="flex gap-3">
+                <button @click="validerModification()" class="text-sm text-slate-600 hover:text-slate-900">Valider</button>
+                <button @click="annulerModification()" class="text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+              </div>
+            </template>
+          </div>
+        </li>
+      </template>
+    </ul>
+  </div>
+
+  <!-- Fenêtre modale : confirmation de suppression -->
+  <div x-show="confirmationSuppression.ouverte" x-cloak class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm">
+      <p class="text-sm text-slate-700 mb-6" x-text="confirmationSuppression.message"></p>
+      <div class="flex justify-end gap-2">
+        <button @click="annulerSuppression()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
+        <button @click="confirmerSuppression()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Message d'erreur intégré -->
+  <div x-show="messageErreur" x-cloak x-transition
+    class="fixed bottom-6 right-6 bg-red-600 text-white text-sm px-4 py-2 rounded-md shadow-lg max-w-sm" x-text="messageErreur">
+  </div>
+
+  <!-- Message de succès -->
+  <div x-show="messageSucces" x-cloak x-transition
+    class="fixed bottom-6 right-6 bg-emerald-600 text-white text-sm px-4 py-2 rounded-md shadow-lg" x-text="messageSucces">
+  </div>
+</div>

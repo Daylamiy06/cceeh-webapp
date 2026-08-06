@@ -1,0 +1,676 @@
+<script>
+  function pageHabitants() {
+    return {
+      vue: "liste", // "liste" | "fiche"
+      chargement: true,
+      messageSucces: "",
+      habitants: [],
+      recherche: "",
+      filtreStatut: "",
+      idHabitantCourant: null,
+      formulaireHabitant: this.habitantVide(),
+      erreurEmail: "",
+      listeParcours: [],
+      listeActivites: [],
+      modaleParcoursOuverte: false,
+      idParcoursEnEdition: null,
+      formulaireParcours: this.parcoursVide(),
+      modaleActiviteOuverte: false,
+      idActiviteEnEdition: null,
+      formulaireActivite: this.activiteVide(),
+      confirmationSuppression: { ouverte: false, message: "", action: null },
+      referentielCivilites: [],
+      referentielStatuts: [],
+      referentielNiveaux: [],
+      referentielDiplomes: [],
+      referentielProfessions: [],
+      referentielSecteurs: [],
+      _lireReferentiel: null,
+      _listerHabitants: null,
+      _listerParcoursDe: null,
+      _listerActivitesDe: null,
+      _creerHabitant: null,
+      _modifierHabitant: null,
+      _supprimerHabitant: null,
+      _creerParcours: null,
+      _modifierParcours: null,
+      _supprimerParcours: null,
+      _creerActivite: null,
+      _modifierActivite: null,
+      _supprimerActivite: null,
+      _calculerContact: null,
+      _libelleCiviliteCourt: null,
+      _calculerExperience: null,
+
+      // Initialisation
+      async init() {
+        const [modReferentiels, modHabitants] = await Promise.all([
+          import("../js/referentiels.js"),
+          import("../js/habitants-data.js"),
+        ]);
+
+        this._lireReferentiel = modReferentiels.lireReferentiel;
+        this._listerHabitants = modHabitants.listerHabitants;
+        this._listerParcoursDe = modHabitants.listerParcoursDe;
+        this._listerActivitesDe = modHabitants.listerActivitesDe;
+        this._creerHabitant = modHabitants.creerHabitant;
+        this._modifierHabitant = modHabitants.modifierHabitant;
+        this._supprimerHabitant = modHabitants.supprimerHabitant;
+        this._creerParcours = modHabitants.creerParcours;
+        this._modifierParcours = modHabitants.modifierParcours;
+        this._supprimerParcours = modHabitants.supprimerParcours;
+        this._creerActivite = modHabitants.creerActivite;
+        this._modifierActivite = modHabitants.modifierActivite;
+        this._supprimerActivite = modHabitants.supprimerActivite;
+        this._calculerContact = modHabitants.calculerContact;
+        this._libelleCiviliteCourt = modHabitants.libelleCiviliteCourt;
+        this._calculerExperience = modHabitants.calculerExperience;
+        await this.chargerReferentiels();
+        await this.chargerListeHabitants();
+      },
+
+      async chargerReferentiels() {
+        [
+          this.referentielCivilites,
+          this.referentielStatuts,
+          this.referentielNiveaux,
+          this.referentielDiplomes,
+          this.referentielProfessions,
+          this.referentielSecteurs,
+        ] = await Promise.all([
+          this._lireReferentiel("civilites"),
+          this._lireReferentiel("statuts"),
+          this._lireReferentiel("niveaux_etude"),
+          this._lireReferentiel("diplomes"),
+          this._lireReferentiel("professions"),
+          this._lireReferentiel("secteurs"),
+        ]);
+      },
+
+      // Vue liste 
+      async chargerListeHabitants() {
+        this.chargement = true;
+        this.habitants = await this._listerHabitants();
+        this.chargement = false;
+      },
+
+      get habitantsFiltres() {
+        return this.habitants.filter((h) => {
+          const correspondNom = h.nom_complet
+            .toLowerCase()
+            .includes(this.recherche.toLowerCase());
+          const correspondStatut =
+            !this.filtreStatut || h.statut_actuel === this.filtreStatut;
+          return correspondNom && correspondStatut;
+        });
+      },
+
+      imprimer() {
+        window.print();
+      },
+
+      // Vue fiche
+      habitantVide() {
+        return {
+          civilite: "",
+          nom_complet: "",
+          date_naissance: "",
+          lieu_naissance: "",
+          adresse_actuelle: "",
+          telephone: "",
+          email: "",
+          statut_actuel: "",
+        };
+      },
+
+      ouvrirNouvelleFiche() {
+        this.idHabitantCourant = null;
+        this.formulaireHabitant = this.habitantVide();
+        this.listeParcours = [];
+        this.listeActivites = [];
+        this.erreurEmail = "";
+        this.vue = "fiche";
+      },
+
+      async ouvrirFicheExistante(id) {
+        this.idHabitantCourant = id;
+        const habitant = this.habitants.find((h) => h.id === id);
+        this.formulaireHabitant = { ...habitant };
+        this.erreurEmail = "";
+        await this.rafraichirParcoursEtActivites();
+        this.vue = "fiche";
+      },
+
+      async rafraichirParcoursEtActivites() {
+        [this.listeParcours, this.listeActivites] = await Promise.all([
+          this._listerParcoursDe(this.idHabitantCourant),
+          this._listerActivitesDe(this.idHabitantCourant),
+        ]);
+      },
+
+      revenirALaListe() {
+        this.vue = "liste";
+      },
+
+      validerEmail() {
+        const email = this.formulaireHabitant.email;
+        if (!email) {
+          this.erreurEmail = "";
+          return;
+        }
+        const formatValide = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        this.erreurEmail = formatValide ? "" : "Format d'adresse email invalide.";
+      },
+
+      async enregistrerHabitant() {
+        this.validerEmail();
+        if (this.erreurEmail) return;
+        if (this.idHabitantCourant) {
+          await this._modifierHabitant(this.idHabitantCourant, this.formulaireHabitant);
+        } else {
+          this.idHabitantCourant = await this._creerHabitant(this.formulaireHabitant);
+        }
+
+        await this.chargerListeHabitants();
+        this.afficherMessageSucces("Habitant enregistré avec succès.");
+      },
+
+      demanderSuppressionHabitant(habitant) {
+        this.confirmationSuppression = {
+          ouverte: true,
+          message: `Supprimer l'habitant « ${habitant.nom_complet} » ? Ses parcours et activités seront également supprimés.`,
+          action: async () => {
+            await this._supprimerHabitant(habitant.id);
+            await this.chargerListeHabitants();
+            if (this.idHabitantCourant === habitant.id) this.vue = "liste";
+            this.afficherMessageSucces("Habitant supprimé.");
+          },
+        };
+      },
+
+      // Modale Parcours
+      parcoursVide() {
+        return {
+          etablissement: "",
+          lieu: "",
+          niveau_etude: "",
+          serie: "",
+          annee_debut: "",
+          annee_fin: "",
+          filiere_etude: "",
+          diplome: "",
+        };
+      },
+
+      get filiereObligatoire() {
+        const niveauxPostBac = [
+          "Licence 1", "Licence 2", "Licence 3",
+          "Master 1", "Master 2", "Doctorat",
+        ];
+        return niveauxPostBac.includes(this.formulaireParcours.niveau_etude);
+      },
+
+      ouvrirFormulaireParcours(parcoursExistant = null) {
+        this.idParcoursEnEdition = parcoursExistant?.id || null;
+        this.formulaireParcours = parcoursExistant
+          ? { ...parcoursExistant }
+          : this.parcoursVide();
+        this.modaleParcoursOuverte = true;
+      },
+
+      fermerModaleParcours() {
+        this.modaleParcoursOuverte = false;
+      },
+
+      async enregistrerParcours() {
+        if (this.idParcoursEnEdition) {
+          await this._modifierParcours(this.idParcoursEnEdition, this.formulaireParcours);
+        } else {
+          await this._creerParcours(this.idHabitantCourant, this.formulaireParcours);
+        }
+        await this.rafraichirParcoursEtActivites();
+        this.fermerModaleParcours();
+        this.afficherMessageSucces("Parcours enregistré avec succès.");
+      },
+
+      demanderSuppressionParcours(parcours) {
+        this.confirmationSuppression = {
+          ouverte: true,
+          message: `Supprimer le parcours à « ${parcours.etablissement} » ?`,
+          action: async () => {
+            await this._supprimerParcours(parcours.id);
+            await this.rafraichirParcoursEtActivites();
+            this.afficherMessageSucces("Parcours supprimé.");
+          },
+        };
+      },
+
+      // Modale Activité professionnelle
+      activiteVide() {
+        return {
+          profession: "",
+          secteur: "",
+          entreprise: "",
+          lieu_travail: "",
+          date_debut: "",
+          date_fin: "",
+          en_cours: false,
+        };
+      },
+
+      ouvrirFormulaireActivite(activiteExistante = null) {
+        this.idActiviteEnEdition = activiteExistante?.id || null;
+        this.formulaireActivite = activiteExistante
+          ? { ...activiteExistante }
+          : this.activiteVide();
+        this.modaleActiviteOuverte = true;
+      },
+
+      fermerModaleActivite() {
+        this.modaleActiviteOuverte = false;
+      },
+
+      async enregistrerActivite() {
+        // Si "En cours" est coché, la date de fin n'est pas renseignée.
+        if (this.formulaireActivite.en_cours) {
+          this.formulaireActivite.date_fin = "";
+        }
+
+        if (this.idActiviteEnEdition) {
+          await this._modifierActivite(this.idActiviteEnEdition, this.formulaireActivite);
+        } else {
+          await this._creerActivite(this.idHabitantCourant, this.formulaireActivite);
+        }
+        await this.rafraichirParcoursEtActivites();
+        this.fermerModaleActivite();
+        this.afficherMessageSucces("Activité enregistrée avec succès.");
+      },
+
+      demanderSuppressionActivite(activite) {
+        this.confirmationSuppression = {
+          ouverte: true,
+          message: `Supprimer l'activité chez « ${activite.entreprise} » ?`,
+          action: async () => {
+            await this._supprimerActivite(activite.id);
+            await this.rafraichirParcoursEtActivites();
+            this.afficherMessageSucces("Activité supprimée.");
+          },
+        };
+      },
+
+      // Confirmation de suppression générique
+      annulerSuppression() {
+        this.confirmationSuppression = { ouverte: false, message: "", action: null };
+      },
+
+      async confirmerSuppression() {
+        const action = this.confirmationSuppression.action;
+        this.confirmationSuppression = { ouverte: false, message: "", action: null };
+        if (action) await action();
+      },
+
+      // Messages de succès
+      afficherMessageSucces(texte) {
+        this.messageSucces = texte;
+        setTimeout(() => { this.messageSucces = ""; }, 3000);
+      },
+
+      // --- Fonctions calculées exposées au template
+      calculerContact(habitant) {
+        return this._calculerContact(habitant);
+      },
+      libelleCiviliteCourt(civilite) {
+        return this._libelleCiviliteCourt(civilite);
+      },
+      calculerExperience(activite) {
+        return this._calculerExperience(activite);
+      },
+    };
+  }
+  window.pageHabitants = pageHabitants;
+</script>
+<div x-data="pageHabitants()" x-init="init()">
+
+  <!-- VUE LISTE -->
+  <div x-show="vue === 'liste'" x-cloak>
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-lg font-semibold text-slate-800">Gestion des habitants</h1>
+      <div class="flex gap-2 no-print">
+        <button @click="imprimer()" class="px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors">Imprimer </button>
+        <button @click="ouvrirNouvelleFiche()" class="px-3 py-1.5 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 transition-colors">+ Nouvel habitant</button>
+      </div>
+    </div>
+    <!-- Recherche et filtre -->
+    <div class="flex gap-3 mb-4 no-print">
+      <input type="text" x-model="recherche" placeholder="Rechercher par nom…"
+        class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"/>
+      <select x-model="filtreStatut" class="rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+        <option value="">Tous les statuts</option>
+        <template x-for="statut in referentielStatuts" :key="statut.id">
+          <option :value="statut.libelle" x-text="statut.libelle"></option>
+        </template>
+      </select>
+    </div>
+    <!-- Indicateur de chargement -->
+    <div x-show="chargement" x-cloak class="flex justify-center py-12">
+      <svg class="animate-spin h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+    </div>
+    <!-- Liste vide -->
+    <div x-show="!chargement && habitantsFiltres.length === 0" x-cloak class="text-center text-sm text-slate-500 py-12 border border-dashed border-slate-300 rounded-md">
+      <span x-text="recherche || filtreStatut ? 'Aucun résultat pour cette recherche.' : 'Aucun habitant enregistré.'"></span>
+    </div>
+    <!-- Tableau des habitants + zone imprimable (§6.4) -->
+    <div x-show="!chargement && habitantsFiltres.length > 0" x-cloak class="zone-impression">
+      <div class="hidden print:block mb-4">
+        <h2 class="text-lg font-bold">Liste des habitants</h2>
+        <p class="text-sm">Coopérative Culturelle des Élèves et Étudiants de Hantsindzi</p>
+      </div>
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-slate-800 text-white text-left">
+            <th class="px-3 py-2 font-medium">Civilité</th>
+            <th class="px-3 py-2 font-medium">Nom et prénom</th>
+            <th class="px-3 py-2 font-medium">Lieu de naissance</th>
+            <th class="px-3 py-2 font-medium">Adresse actuelle</th>
+            <th class="px-3 py-2 font-medium">Contact</th>
+            <th class="px-3 py-2 font-medium no-print">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="habitant in habitantsFiltres" :key="habitant.id">
+            <tr class="border-b border-slate-200 hover:bg-slate-50">
+              <td class="px-3 py-2" x-text="libelleCiviliteCourt(habitant.civilite)"></td>
+              <td class="px-3 py-2" x-text="habitant.nom_complet"></td>
+              <td class="px-3 py-2" x-text="habitant.lieu_naissance || '—'"></td>
+              <td class="px-3 py-2" x-text="habitant.adresse_actuelle"></td>
+              <td class="px-3 py-2" x-text="calculerContact(habitant)"></td>
+              <td class="px-3 py-2 no-print">
+                <button @click="ouvrirFicheExistante(habitant.id)" class="text-slate-600 hover:text-slate-900 mr-3 text-sm">Modifier</button>
+                <button @click="demanderSuppressionHabitant(habitant)" class="text-red-600 hover:text-red-800 text-sm">Supprimer</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <p class="hidden print:block text-sm mt-4">Total : <span x-text="habitantsFiltres.length"></span> habitant(s)</p>
+    </div>
+  </div>
+
+  <!-- VUE FICHE -->
+  <div x-show="vue === 'fiche'" x-cloak>
+    <div class="flex items-center gap-3 mb-6">
+      <button @click="revenirALaListe()" class="text-slate-500 hover:text-slate-800 text-sm">← Retour à la liste</button>
+    </div>
+    <h1 class="text-lg font-semibold text-slate-800 mb-6">
+      <span x-text="idHabitantCourant ? 'Modifier un habitant' : 'Nouvel habitant'"></span>
+    </h1>
+
+    <!-- Bloc Informations personnelles -->
+    <section class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">Informations personnelles</h2>
+      <form @submit.prevent="enregistrerHabitant()" class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-slate-600 mb-1"> Civilité <span class="text-red-500">*</span></label>
+          <select x-model="formulaireHabitant.civilite" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="c in referentielCivilites" :key="c.id">
+              <option :value="c.libelle" x-text="c.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Nom et prénom <span class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" required x-model="formulaireHabitant.nom_complet" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Date de naissance</label>
+          <input type="date" x-model="formulaireHabitant.date_naissance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Lieu de naissance</label>
+          <input type="text" maxlength="50" x-model="formulaireHabitant.lieu_naissance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Adresse actuelle <span class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" required x-model="formulaireHabitant.adresse_actuelle" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Téléphone</label>
+          <input type="text" maxlength="50" x-model="formulaireHabitant.telephone" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Email</label>
+          <input type="email" maxlength="50" x-model="formulaireHabitant.email" @blur="validerEmail()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+          <p x-show="erreurEmail" x-cloak class="text-xs text-red-600 mt-1" x-text="erreurEmail"></p>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Statut actuel <span class="text-red-500">*</span></label>
+          <select x-model="formulaireHabitant.statut_actuel" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="s in referentielStatuts" :key="s.id">
+              <option :value="s.libelle" x-text="s.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <div class="col-span-2 flex justify-end gap-2 pt-2">
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 transition-colors">Enregistrer</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Bloc Parcours scolaire -->
+    <section x-show="idHabitantCourant" x-cloak class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Parcours scolaire</h2>
+        <button @click="ouvrirFormulaireParcours()"
+          class="px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors"> + Ajouter un parcours
+		</button>
+      </div>
+      <div x-show="listeParcours.length === 0" x-cloak class="text-center text-sm text-slate-500 py-8 border border-dashed border-slate-300 rounded-md">Aucun parcours enregistré.</div>
+      <table x-show="listeParcours.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-500 border-b border-slate-200">
+            <th class="py-2 font-medium">Établissement</th>
+            <th class="py-2 font-medium">Lieu</th>
+            <th class="py-2 font-medium">Niveau</th>
+            <th class="py-2 font-medium">Début</th>
+            <th class="py-2 font-medium">Fin</th>
+            <th class="py-2 font-medium">Filière</th>
+            <th class="py-2 font-medium">Diplôme</th>
+            <th class="py-2 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="p in listeParcours" :key="p.id">
+            <tr class="border-b border-slate-100">
+              <td class="py-2" x-text="p.etablissement"></td>
+              <td class="py-2" x-text="p.lieu"></td>
+              <td class="py-2" x-text="p.niveau_etude"></td>
+              <td class="py-2" x-text="p.annee_debut || '—'"></td>
+              <td class="py-2" x-text="p.annee_fin || '—'"></td>
+              <td class="py-2" x-text="p.filiere_etude || '—'"></td>
+              <td class="py-2" x-text="p.diplome || '—'"></td>
+              <td class="py-2">
+                <button @click="ouvrirFormulaireParcours(p)" class="text-slate-600 hover:text-slate-900 mr-2">Modifier</button>
+                <button @click="demanderSuppressionParcours(p)" class="text-red-600 hover:text-red-800">Supprimer</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </section>
+    
+    <!-- Bloc Activité professionnelle. Affiché uniquement si statut = "professionnel" -->
+    <section x-show="idHabitantCourant && formulaireHabitant.statut_actuel === 'professionnel'" x-cloak class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Activité professionnelle</h2>
+        <button @click="ouvrirFormulaireActivite()"
+          class="px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors"> + Ajouter une activité
+        </button>
+      </div>
+      <div x-show="listeActivites.length === 0" x-cloak class="text-center text-sm text-slate-500 py-8 border border-dashed border-slate-300 rounded-md">
+        Aucune activité professionnelle enregistrée.
+      </div>
+      <table x-show="listeActivites.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-500 border-b border-slate-200">
+            <th class="py-2 font-medium">Entreprise</th>
+            <th class="py-2 font-medium">Profession</th>
+            <th class="py-2 font-medium">Secteur</th>
+            <th class="py-2 font-medium">Lieu de travail</th>
+            <th class="py-2 font-medium">Période</th>
+            <th class="py-2 font-medium">Expérience</th>
+            <th class="py-2 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="a in listeActivites" :key="a.id">
+            <tr class="border-b border-slate-100">
+              <td class="py-2" x-text="a.entreprise"></td>
+              <td class="py-2" x-text="a.profession"></td>
+              <td class="py-2" x-text="a.secteur"></td>
+              <td class="py-2" x-text="a.lieu_travail || '—'"></td>
+              <td class="py-2">
+                <span x-text="a.date_debut"></span> →
+                <span x-text="a.en_cours ? 'En cours' : a.date_fin"></span>
+              </td>
+              <td class="py-2" x-text="calculerExperience(a)"></td>
+              <td class="py-2">
+                <button @click="ouvrirFormulaireActivite(a)" class="text-slate-600 hover:text-slate-900 mr-2">Modifier</button>
+                <button @click="demanderSuppressionActivite(a)" class="text-red-600 hover:text-red-800">Supprimer</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Fenêtre modale : formulaire Parcours -->
+  <div x-show="modaleParcoursOuverte" x-cloak class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+      <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
+        <span x-text="idParcoursEnEdition ? 'Modifier le parcours' : 'Nouveau parcours'"></span>
+      </h3>
+      <form @submit.prevent="enregistrerParcours()" class="grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Établissement <span class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" required x-model="formulaireParcours.etablissement" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Lieu <span class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" required x-model="formulaireParcours.lieu" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Niveau d'étude <span class="text-red-500">*</span></label>
+          <select x-model="formulaireParcours.niveau_etude" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="n in referentielNiveaux" :key="n.id">
+              <option :value="n.libelle" x-text="n.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <!-- Série : uniquement si Niveau = Terminale -->
+        <div x-show="formulaireParcours.niveau_etude === 'Terminale'" x-cloak>
+          <label class="block text-sm text-slate-600 mb-1">Série</label>
+          <input type="text" x-model="formulaireParcours.serie" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Année de début</label>
+          <input type="text" maxlength="4" pattern="[0-9]{4}" x-model="formulaireParcours.annee_debut" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="AAAA" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Année de fin</label>
+          <input type="text" maxlength="4" pattern="[0-9]{4}" x-model="formulaireParcours.annee_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="AAAA" />
+        </div>
+        <!-- Filière : obligatoire uniquement si niveau post-bac -->
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Filière d'étude<span x-show="filiereObligatoire" x-cloak class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" :required="filiereObligatoire" x-model="formulaireParcours.filiere_etude" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Diplôme obtenu</label>
+          <select x-model="formulaireParcours.diplome" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="">— Aucun —</option>
+            <template x-for="d in referentielDiplomes" :key="d.id">
+              <option :value="d.libelle" x-text="d.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <div class="col-span-2 flex justify-end gap-2 pt-2">
+          <button type="button" @click="fermerModaleParcours()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Fenêtre modale : formulaire Activité professionnelle -->
+  <div x-show="modaleActiviteOuverte" x-cloak class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+      <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4"><span x-text="idActiviteEnEdition ? 'Modifier l\'activité' : 'Nouvelle activité'"></span></h3>
+      <form @submit.prevent="enregistrerActivite()" class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Profession <span class="text-red-500">*</span></label>
+          <select x-model="formulaireActivite.profession" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="p in referentielProfessions" :key="p.id">
+              <option :value="p.libelle" x-text="p.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Secteur <span class="text-red-500">*</span></label>
+          <select x-model="formulaireActivite.secteur" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="s in referentielSecteurs" :key="s.id">
+              <option :value="s.libelle" x-text="s.libelle"></option>
+            </template>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Entreprise <span class="text-red-500">*</span></label>
+          <input type="text" maxlength="50" required x-model="formulaireActivite.entreprise" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="col-span-2">
+          <label class="block text-sm text-slate-600 mb-1">Lieu de travail</label>
+          <input type="text" maxlength="50" x-model="formulaireActivite.lieu_travail" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Date de début <span class="text-red-500">*</span></label>
+          <input type="date" required x-model="formulaireActivite.date_debut" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Date de fin</label>
+          <input type="date" :disabled="formulaireActivite.en_cours" x-model="formulaireActivite.date_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"/>
+          <label class="flex items-center gap-2 mt-2 text-sm text-slate-600">
+            <input type="checkbox" x-model="formulaireActivite.en_cours" />En cours
+          </label>
+        </div>
+        <div class="col-span-2 flex justify-end gap-2 pt-2">
+          <button type="button" @click="fermerModaleActivite()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Fenêtre modale : confirmation de suppression -->
+  <div x-show="confirmationSuppression.ouverte" x-cloak class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm">
+      <p class="text-sm text-slate-700 mb-6" x-text="confirmationSuppression.message"></p>
+      <div class="flex justify-end gap-2">
+        <button @click="annulerSuppression()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
+        <button @click="confirmerSuppression()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">Supprimer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bandeau de message de succès -->
+  <div x-show="messageSucces" x-cloak x-transition
+    class="fixed bottom-6 right-6 bg-emerald-600 text-white text-sm px-4 py-2 rounded-md shadow-lg" x-text="messageSucces">
+  </div>
+</div>

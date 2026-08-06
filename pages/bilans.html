@@ -1,0 +1,290 @@
+<script>
+  function pageBilans() {
+    return {
+      chargement: true,
+      ongletActif: "parcours",
+      onglets: [
+        { id: "parcours", libelle: "Bilan de parcours" },
+        { id: "bacheliers", libelle: "Bilan de bacheliers" },
+        { id: "professionnels", libelle: "Bilan de professionnels" },
+      ],
+      tousLesParcours: [],
+      tousLesBacheliers: [],
+      tousLesProfessionnels: [],
+      filtresParcours: { recherche: "", annee: "", diplome: "", statut: "", civilite: "" },
+      filtresBacheliers: { recherche: "", annee: "", serie: "", civilite: "" },
+      filtresProfessionnels: { recherche: "", annee: "", secteur: "", civilite: "" },
+      referentielCivilites: [],
+      referentielStatuts: [],
+      referentielDiplomes: [],
+      referentielSecteurs: [],
+
+      async init() {
+        this.chargement = true;
+        const [modReferentiels, modBilans] = await Promise.all([
+          import("../js/referentiels.js"),
+          import("../js/bilans-data.js"),
+        ]);
+
+        [
+          this.tousLesParcours,
+          this.tousLesBacheliers,
+          this.tousLesProfessionnels,
+          this.referentielCivilites,
+          this.referentielStatuts,
+          this.referentielDiplomes,
+          this.referentielSecteurs,
+        ] = await Promise.all([
+          modBilans.construireBilanParcours(),
+          modBilans.construireBilanBacheliers(),
+          modBilans.construireBilanProfessionnels(),
+          modReferentiels.lireReferentiel("civilites"),
+          modReferentiels.lireReferentiel("statuts"),
+          modReferentiels.lireReferentiel("diplomes"),
+          modReferentiels.lireReferentiel("secteurs"),
+        ]);
+
+        this.chargement = false;
+      },
+
+      // filtrage du bilan de parcours
+      get parcoursFiltres() {
+        const f = this.filtresParcours;
+        return this.tousLesParcours.filter((ligne) =>
+          correspondRecherche(ligne.nom_complet, f.recherche) &&
+          correspondExact(ligne.annee, f.annee) &&
+          correspondExact(ligne.diplome, f.diplome) &&
+          correspondExact(ligne.statut, f.statut) &&
+          correspondExact(ligne.civilite, libelleCourtDe(f.civilite))
+        );
+      },
+
+      // filtrage du bilan de bacheliers
+      get bacheliersFiltres() {
+        const f = this.filtresBacheliers;
+        return this.tousLesBacheliers.filter((ligne) =>
+          correspondRecherche(ligne.nom_complet, f.recherche) &&
+          correspondExact(ligne.annee, f.annee) &&
+          correspondRecherche(ligne.serie, f.serie) &&
+          correspondExact(ligne.civilite, libelleCourtDe(f.civilite))
+        );
+      },
+
+      // filtrage du bilan de professionnels
+      get professionnelsFiltres() {
+        const f = this.filtresProfessionnels;
+        return this.tousLesProfessionnels.filter((ligne) =>
+          correspondRecherche(ligne.nom_complet, f.recherche) &&
+          correspondExact(String(ligne.annee), f.annee) &&
+          correspondExact(ligne.secteur, f.secteur) &&
+          correspondExact(ligne.civilite, libelleCourtDe(f.civilite))
+        );
+      },
+    };
+  }
+
+  // --- Fonctions utilitaires de filtrage (partagées par les 3 bilans) --------
+
+  function correspondRecherche(valeur, filtre) {
+    if (!filtre) return true;
+    return (valeur || "").toLowerCase().includes(filtre.toLowerCase());
+  }
+
+  function correspondExact(valeur, filtre) {
+    if (!filtre) return true;
+    return String(valeur) === String(filtre);
+  }
+
+  function libelleCourtDe(civiliteLongue) {
+    const correspondances = { Monsieur: "Mr", Madame: "Mme", Mademoiselle: "Mlle" };
+    return correspondances[civiliteLongue] || civiliteLongue;
+  }
+
+  window.pageBilans = pageBilans;
+</script>
+
+<div x-data="pageBilans()" x-init="init()">
+  <h1 class="text-lg font-semibold text-slate-800 mb-6">Bilans statistiques</h1>
+  
+  <!-- Onglets -->
+  <div class="flex gap-1 border-b border-slate-200 mb-6 no-print">
+    <template x-for="onglet in onglets" :key="onglet.id">
+      <button @click="ongletActif = onglet.id" :class="ongletActif === onglet.id ? 'border-b-2 border-slate-800 text-slate-800' : 'text-slate-500 hover:text-slate-700'"
+        class="px-4 py-2 text-sm font-medium transition-colors" x-text="onglet.libelle">
+      </button>
+    </template>
+  </div>
+
+  <!-- Indicateur de chargement -->
+  <div x-show="chargement" x-cloak class="flex justify-center py-16">
+    <svg class="animate-spin h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+    </svg>
+  </div>
+
+  <div x-show="!chargement" x-cloak>
+
+    <!-- Onglet : Bilan de parcours -->
+    <div x-show="ongletActif === 'parcours'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-sm text-slate-600">Total parcours : <span class="font-semibold" x-text="parcoursFiltres.length"></span></p>
+      </div>
+      <div class="grid grid-cols-5 gap-3 mb-4 no-print">
+        <input type="text" x-model="filtresParcours.recherche" placeholder="Nom ou prénom…"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input type="text" maxlength="4" x-model="filtresParcours.annee" placeholder="Année"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresParcours.diplome" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Tous les diplômes</option>
+          <template x-for="d in referentielDiplomes" :key="d.id">
+            <option :value="d.libelle" x-text="d.libelle"></option>
+          </template>
+        </select>
+        <select x-model="filtresParcours.statut" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Tous les statuts</option>
+          <template x-for="s in referentielStatuts" :key="s.id">
+            <option :value="s.libelle" x-text="s.libelle"></option>
+          </template>
+        </select>
+        <select x-model="filtresParcours.civilite" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Toutes civilités</option>
+          <template x-for="c in referentielCivilites" :key="c.id">
+            <option :value="c.libelle" x-text="c.libelle"></option>
+          </template>
+        </select>
+      </div>
+      <div x-show="parcoursFiltres.length === 0" x-cloak class="text-center text-sm text-slate-500 py-12 border border-dashed border-slate-300 rounded-md">Aucun résultat.</div>
+      <table x-show="parcoursFiltres.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-800 text-white text-left">
+            <th class="px-3 py-2 font-medium">Civilité</th>
+            <th class="px-3 py-2 font-medium">Nom et prénom</th>
+            <th class="px-3 py-2 font-medium">Adresse actuelle</th>
+            <th class="px-3 py-2 font-medium">Contact</th>
+            <th class="px-3 py-2 font-medium">Statut</th>
+            <th class="px-3 py-2 font-medium">Diplôme</th>
+            <th class="px-3 py-2 font-medium">Année</th>
+            <th class="px-3 py-2 font-medium">Établissement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="ligne in parcoursFiltres" :key="ligne.id">
+            <tr class="border-b border-slate-200">
+              <td class="px-3 py-2" x-text="ligne.civilite"></td>
+              <td class="px-3 py-2" x-text="ligne.nom_complet"></td>
+              <td class="px-3 py-2" x-text="ligne.adresse_actuelle"></td>
+              <td class="px-3 py-2" x-text="ligne.contact"></td>
+              <td class="px-3 py-2" x-text="ligne.statut"></td>
+              <td class="px-3 py-2" x-text="ligne.diplome || '—'"></td>
+              <td class="px-3 py-2" x-text="ligne.annee || '—'"></td>
+              <td class="px-3 py-2" x-text="ligne.etablissement"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Onglet : Bilan de bacheliers -->
+    <div x-show="ongletActif === 'bacheliers'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-sm text-slate-600">Total bacheliers : <span class="font-semibold" x-text="bacheliersFiltres.length"></span></p>
+      </div>
+      <div class="grid grid-cols-4 gap-3 mb-4 no-print">
+        <input type="text" x-model="filtresBacheliers.recherche" placeholder="Nom ou prénom…"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input type="text" maxlength="4" x-model="filtresBacheliers.annee" placeholder="Année"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input type="text" x-model="filtresBacheliers.serie" placeholder="Série"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresBacheliers.civilite" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Toutes civilités</option>
+          <template x-for="c in referentielCivilites" :key="c.id">
+            <option :value="c.libelle" x-text="c.libelle"></option>
+          </template>
+        </select>
+      </div>
+      <div x-show="bacheliersFiltres.length === 0" x-cloak class="text-center text-sm text-slate-500 py-12 border border-dashed border-slate-300 rounded-md">Aucun résultat.</div>
+      <table x-show="bacheliersFiltres.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-800 text-white text-left">
+            <th class="px-3 py-2 font-medium">Civilité</th>
+            <th class="px-3 py-2 font-medium">Nom et prénom</th>
+            <th class="px-3 py-2 font-medium">Adresse actuelle</th>
+            <th class="px-3 py-2 font-medium">Contact</th>
+            <th class="px-3 py-2 font-medium">Année</th>
+            <th class="px-3 py-2 font-medium">Série</th>
+            <th class="px-3 py-2 font-medium">Établissement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="ligne in bacheliersFiltres" :key="ligne.id">
+            <tr class="border-b border-slate-200">
+              <td class="px-3 py-2" x-text="ligne.civilite"></td>
+              <td class="px-3 py-2" x-text="ligne.nom_complet"></td>
+              <td class="px-3 py-2" x-text="ligne.adresse_actuelle"></td>
+              <td class="px-3 py-2" x-text="ligne.contact"></td>
+              <td class="px-3 py-2" x-text="ligne.annee || '—'"></td>
+              <td class="px-3 py-2" x-text="ligne.serie || '—'"></td>
+              <td class="px-3 py-2" x-text="ligne.etablissement"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Onglet : Bilan de professionnels -->
+    <div x-show="ongletActif === 'professionnels'" x-cloak>
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-sm text-slate-600">Total Pro : <span class="font-semibold" x-text="professionnelsFiltres.length"></span></p>
+      </div>
+      <div class="grid grid-cols-4 gap-3 mb-4 no-print">
+        <input type="text" x-model="filtresProfessionnels.recherche" placeholder="Nom ou prénom…"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input type="text" x-model="filtresProfessionnels.annee" placeholder="Année (ou « En cours »)"
+          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresProfessionnels.secteur" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Tous secteurs</option>
+          <template x-for="s in referentielSecteurs" :key="s.id">
+            <option :value="s.libelle" x-text="s.libelle"></option>
+          </template>
+        </select>
+        <select x-model="filtresProfessionnels.civilite" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Toutes civilités</option>
+          <template x-for="c in referentielCivilites" :key="c.id">
+            <option :value="c.libelle" x-text="c.libelle"></option>
+          </template>
+        </select>
+      </div>
+      <div x-show="professionnelsFiltres.length === 0" x-cloak class="text-center text-sm text-slate-500 py-12 border border-dashed border-slate-300 rounded-md">Aucun résultat.</div>
+      <table x-show="professionnelsFiltres.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-800 text-white text-left">
+            <th class="px-3 py-2 font-medium">Civilité</th>
+            <th class="px-3 py-2 font-medium">Nom et prénom</th>
+            <th class="px-3 py-2 font-medium">Adresse actuelle</th>
+            <th class="px-3 py-2 font-medium">Contact</th>
+            <th class="px-3 py-2 font-medium">Profession</th>
+            <th class="px-3 py-2 font-medium">Entreprise</th>
+            <th class="px-3 py-2 font-medium">Secteur</th>
+            <th class="px-3 py-2 font-medium">Année</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="ligne in professionnelsFiltres" :key="ligne.id">
+            <tr class="border-b border-slate-200">
+              <td class="px-3 py-2" x-text="ligne.civilite"></td>
+              <td class="px-3 py-2" x-text="ligne.nom_complet"></td>
+              <td class="px-3 py-2" x-text="ligne.adresse_actuelle"></td>
+              <td class="px-3 py-2" x-text="ligne.contact"></td>
+              <td class="px-3 py-2" x-text="ligne.profession"></td>
+              <td class="px-3 py-2" x-text="ligne.entreprise"></td>
+              <td class="px-3 py-2" x-text="ligne.secteur"></td>
+              <td class="px-3 py-2" x-text="ligne.annee"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
