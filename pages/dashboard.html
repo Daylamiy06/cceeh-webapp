@@ -1,0 +1,185 @@
+<script>
+  function pageDashboard() {
+    const anneeCourante = new Date().getFullYear();
+    return {
+      chargement: true,
+      indicateurs: {},
+      repartitionDiplomes: [],
+      anneeDiplomes: anneeCourante,
+      anneeDepuis: anneeCourante - 5,
+      anneeJusqua: anneeCourante,
+      anneesDisponibles: Array.from({ length: 30 }, (_, i) => anneeCourante - i),
+      graphiqueDiplomesInstance: null,
+      graphiqueActivitesInstance: null,
+      _calculerIndicateurs: null,
+      _calculerRepartitionDiplomes: null,
+      _calculerEvolutionActivites: null,
+
+      async init() {
+        this.chargement = true;
+        const [module, ] = await Promise.all([
+          import("../js/statistiques-data.js"),
+          this._importerChartJsSiNecessaire(),
+        ]);
+
+        this._calculerIndicateurs = module.calculerIndicateurs;
+        this._calculerRepartitionDiplomes = module.calculerRepartitionDiplomes;
+        this._calculerEvolutionActivites = module.calculerEvolutionActivites;
+
+        this.indicateurs = await this._calculerIndicateurs();
+        this.chargement = false;
+        await this.$nextTick();
+        await this.chargerGraphiqueDiplomes();
+        await this.chargerGraphiqueActivites();
+      },
+
+      async chargerGraphiqueDiplomes() {
+        this.repartitionDiplomes = await this._calculerRepartitionDiplomes(this.anneeDiplomes);
+        await this.$nextTick();
+        if (this.repartitionDiplomes.length === 0) return;
+
+        const contexte = document.getElementById("graphiqueDiplomes")?.getContext("2d");
+        if (!contexte) return;
+        Chart.getChart(contexte.canvas)?.destroy();
+
+        this.graphiqueDiplomesInstance = new Chart(contexte, {
+          type: "pie",
+          data: {
+            labels: this.repartitionDiplomes.map((d) => d.libelle),
+            datasets: [{
+              data: this.repartitionDiplomes.map((d) => d.valeur),
+              backgroundColor: [
+                "#1e293b", "#475569", "#64748b", "#94a3b8",
+                "#cbd5e1", "#0f172a", "#334155", "#e2e8f0",
+              ],
+            }],
+          },
+          options: {
+            plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
+          },
+        });
+      },
+
+      async chargerGraphiqueActivites() {
+        if (this.anneeDepuis > this.anneeJusqua) return;
+
+        const evolution = await this._calculerEvolutionActivites(this.anneeDepuis, this.anneeJusqua);
+        await this.$nextTick();
+
+        const contexte = document.getElementById("graphiqueActivites")?.getContext("2d");
+        if (!contexte) return;
+        Chart.getChart(contexte.canvas)?.destroy();
+
+        this.graphiqueActivitesInstance = new Chart(contexte, {
+          type: "line",
+          data: {
+            labels: evolution.map((e) => e.annee),
+            datasets: [{
+              label: "Professionnels",
+              data: evolution.map((e) => e.nombre),
+              borderColor: "#1e293b",
+              backgroundColor: "rgba(30, 41, 59, 0.1)",
+              tension: 0.3,
+              fill: true,
+            }],
+          },
+          options: {
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          },
+        });
+      },
+
+      _importerChartJsSiNecessaire() {
+        if (window.Chart) return Promise.resolve();
+        return new Promise((resoudre) => {
+          const script = document.createElement("script");
+          script.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
+          script.onload = resoudre;
+          document.head.appendChild(script);
+        });
+      },
+    };
+  }
+  window.pageDashboard = pageDashboard;
+</script>
+<div x-data="pageDashboard()" x-init="init()">
+  <h1 class="text-lg font-semibold text-slate-800 mb-6">Tableau de bord</h1>
+  <!-- Indicateur de chargement -->
+  <div x-show="chargement" x-cloak class="flex justify-center py-16">
+    <svg class="animate-spin h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+    </svg>
+  </div>
+  <div x-show="!chargement" x-cloak>
+
+    <!-- Indicateurs chiffrés -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Total inscrits</p>
+        <p class="text-3xl font-bold text-slate-800" x-text="indicateurs.totalInscrits"></p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Total élèves</p>
+        <p class="text-3xl font-bold text-slate-800" x-text="indicateurs.totalEleves"></p>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Total étudiants</p>
+        <p class="text-3xl font-bold text-slate-800 mb-2" x-text="indicateurs.totalEtudiants"></p>
+        <div class="text-xs text-slate-500 space-y-0.5">
+          <p>Licences : <span class="font-medium" x-text="indicateurs.totalLicence"></span></p>
+          <p>Masters : <span class="font-medium" x-text="indicateurs.totalMaster"></span></p>
+          <p>Doctorats : <span class="font-medium" x-text="indicateurs.totalDoctorat"></span></p>
+        </div>
+      </div>
+      
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Total professionnels</p>
+        <p class="text-3xl font-bold text-slate-800" x-text="indicateurs.totalProfessionnels"></p>
+      </div>
+    </div>
+
+    <!-- Graphiques -->
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Graphique circulaire : répartition des diplômes -->
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-slate-700">Répartition des diplômes</h2>
+          <select x-model.number="anneeDiplomes" @change="chargerGraphiqueDiplomes()"
+            class="text-sm rounded-md border border-slate-300 px-2 py-1">
+            <template x-for="a in anneesDisponibles" :key="a">
+              <option :value="a" x-text="a"></option>
+            </template>
+          </select>
+        </div>
+        <div x-show="repartitionDiplomes.length === 0" x-cloak class="text-center text-sm text-slate-500 py-12">Aucun résultat pour cette année.</div>
+        <canvas x-show="repartitionDiplomes.length > 0" x-cloak id="graphiqueDiplomes" height="220"></canvas>
+      </div>
+
+      <!-- Graphique courbes : évolution des activités professionnelles -->
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-slate-700">Évolution des professionnels</h2>
+          <div class="flex items-center gap-2 text-sm">
+            <span class="text-slate-500">Depuis</span>
+            <select x-model.number="anneeDepuis" @change="chargerGraphiqueActivites()" class="rounded-md border border-slate-300 px-2 py-1">
+              <template x-for="a in anneesDisponibles" :key="a">
+                <option :value="a" x-text="a"></option>
+              </template>
+            </select>
+            <span class="text-slate-500">Jusqu'à</span>
+            <select x-model.number="anneeJusqua" @change="chargerGraphiqueActivites()" class="rounded-md border border-slate-300 px-2 py-1">
+              <template x-for="a in anneesDisponibles" :key="a">
+                <option :value="a" x-text="a"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+        <canvas id="graphiqueActivites" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
