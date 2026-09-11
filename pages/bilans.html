@@ -2,6 +2,7 @@
   function pageBilans() {
     return {
       chargement: true,
+      erreurChargement: "",
       ongletActif: "parcours",
       onglets: [
         { id: "parcours", libelle: "Bilan de parcours" },
@@ -13,50 +14,66 @@
       tousLesProfessionnels: [],
       filtresParcours: { recherche: "", annee: "", diplome: "", statut: "", civilite: "" },
       filtresBacheliers: { recherche: "", annee: "", serie: "", civilite: "" },
-      filtresProfessionnels: { recherche: "", annee: "", secteur: "", civilite: "" },
+      filtresProfessionnels: { recherche: "", annee: "En cours", secteur: "", civilite: "" },
       referentielCivilites: [],
       referentielStatuts: [],
       referentielDiplomes: [],
       referentielSecteurs: [],
+      _libelleDiplomeAvecSerie: null,
 
       async init() {
         this.chargement = true;
-        const [modReferentiels, modBilans] = await Promise.all([
-          import("../js/referentiels.js"),
-          import("../js/bilans-data.js"),
-        ]);
+        try {
+          const [modReferentiels, modBilans, modHabitants] = await Promise.all([
+            import("./js/referentiels.js?v=20260826-2"),
+            import("./js/bilans-data.js?v=20260826-2"),
+            import("./js/habitants-data.js?v=20260826-2"),
+          ]);
+          this._libelleDiplomeAvecSerie = modHabitants.libelleDiplomeAvecSerie;
 
-        [
-          this.tousLesParcours,
-          this.tousLesBacheliers,
-          this.tousLesProfessionnels,
-          this.referentielCivilites,
-          this.referentielStatuts,
-          this.referentielDiplomes,
-          this.referentielSecteurs,
-        ] = await Promise.all([
-          modBilans.construireBilanParcours(),
-          modBilans.construireBilanBacheliers(),
-          modBilans.construireBilanProfessionnels(),
-          modReferentiels.lireReferentiel("civilites"),
-          modReferentiels.lireReferentiel("statuts"),
-          modReferentiels.lireReferentiel("diplomes"),
-          modReferentiels.lireReferentiel("secteurs"),
-        ]);
-
-        this.chargement = false;
+          [
+            this.tousLesParcours,
+            this.tousLesBacheliers,
+            this.tousLesProfessionnels,
+            this.referentielCivilites,
+            this.referentielStatuts,
+            this.referentielDiplomes,
+            this.referentielSecteurs,
+          ] = await Promise.all([
+            modBilans.construireBilanParcours(),
+            modBilans.construireBilanBacheliers(),
+            modBilans.construireBilanProfessionnels(),
+            modReferentiels.lireReferentiel("civilites"),
+            modReferentiels.lireReferentiel("statuts"),
+            modReferentiels.lireReferentiel("diplomes"),
+            modReferentiels.lireReferentiel("secteurs"),
+          ]);
+        } catch (erreur) {
+          this.erreurChargement = "Impossible de charger les bilans statistiques.";
+        } finally {
+          this.chargement = false;
+        }
       },
 
-      // filtrage du bilan de parcours
+      // filtrage du bilan de parcours.
       get parcoursFiltres() {
         const f = this.filtresParcours;
-        return this.tousLesParcours.filter((ligne) =>
-          correspondRecherche(ligne.nom_complet, f.recherche) &&
-          correspondExact(ligne.annee, f.annee) &&
-          correspondExact(ligne.diplome, f.diplome) &&
-          correspondExact(ligne.statut, f.statut) &&
-          correspondExact(ligne.civilite, libelleCourtDe(f.civilite))
+        return uneLigneParPersonne(
+          this.tousLesParcours,
+          (ligne) =>
+            correspondRecherche(ligne.nom_complet, f.recherche) &&
+            correspondExact(ligne.annee, f.annee) &&
+            correspondExact(ligne.diplome, f.diplome) &&
+            correspondExact(ligne.statut, f.statut) &&
+            correspondExact(ligne.civilite, libelleCourtDe(f.civilite)),
+          (ligne) => Number(ligne.annee) || -Infinity
         );
+      },
+
+      // Années disponibles pour le filtre "Année" du bilan de parcours, dérivées des parcours existants.
+      get anneesDisponiblesParcours() {
+        const annees = new Set(this.tousLesParcours.map((ligne) => ligne.annee).filter(Boolean));
+        return [...annees].sort((a, b) => Number(b) - Number(a));
       },
 
       // filtrage du bilan de bacheliers
@@ -70,24 +87,64 @@
         );
       },
 
-      // filtrage du bilan de professionnels
+      // Années disponibles pour le filtre "Année" du bilan de bacheliers.
+      get anneesDisponiblesBacheliers() {
+        const annees = new Set(this.tousLesBacheliers.map((ligne) => ligne.annee).filter(Boolean));
+        return [...annees].sort((a, b) => Number(b) - Number(a));
+      },
+
+      // Années disponibles pour le filtre "Année (ou Encours)" du bilan professionnels, dérivées des activités existantes.
+      get anneesDisponiblesProfessionnels() {
+        const annees = new Set(
+          this.tousLesProfessionnels
+            .map((ligne) => ligne.annee)
+            .filter((a) => typeof a === "number" && !Number.isNaN(a))
+        );
+        return [...annees].sort((a, b) => b - a);
+      },
+
+      // filtrage du bilan de professionnels.
       get professionnelsFiltres() {
         const f = this.filtresProfessionnels;
-        return this.tousLesProfessionnels.filter((ligne) =>
-          correspondRecherche(ligne.nom_complet, f.recherche) &&
-          correspondExact(String(ligne.annee), f.annee) &&
-          correspondExact(ligne.secteur, f.secteur) &&
-          correspondExact(ligne.civilite, libelleCourtDe(f.civilite))
+        return uneLigneParPersonne(
+          this.tousLesProfessionnels,
+          (ligne) =>
+            correspondRecherche(ligne.nom_complet, f.recherche) &&
+            correspondExact(String(ligne.annee), f.annee) &&
+            correspondExact(ligne.secteur, f.secteur) &&
+            correspondExact(ligne.civilite, libelleCourtDe(f.civilite)),
+          (ligne) => ligne.date_debut || ""
         );
+      },
+
+      // Même logique que dans la fiche habitant.
+      libelleDiplomeAvecSerie(ligne) {
+        return this._libelleDiplomeAvecSerie(ligne);
+      },
+
+      imprimer() {
+        window.print();
       },
     };
   }
 
   // --- Fonctions utilitaires de filtrage (partagées par les 3 bilans) --------
 
+  function uneLigneParPersonne(lignes, correspondFiltre, cleRecence) {
+    const meilleureParHabitant = new Map();
+    for (const ligne of lignes) {
+      if (!correspondFiltre(ligne)) continue;
+      const existante = meilleureParHabitant.get(ligne.id_habitant);
+      if (!existante || cleRecence(ligne) > cleRecence(existante)) {
+        meilleureParHabitant.set(ligne.id_habitant, ligne);
+      }
+    }
+    return [...meilleureParHabitant.values()];
+  }
+
   function correspondRecherche(valeur, filtre) {
     if (!filtre) return true;
-    return (valeur || "").toLowerCase().includes(filtre.toLowerCase());
+    return String(valeur || "").toLowerCase().includes(String(filtre).toLowerCase());
   }
 
   function correspondExact(valeur, filtre) {
@@ -103,8 +160,9 @@
   window.pageBilans = pageBilans;
 </script>
 
-<div x-data="pageBilans()" x-init="init()">
+<div x-data="pageBilans()">
   <h1 class="text-lg font-semibold text-slate-800 mb-6">Bilans statistiques</h1>
+  <div x-show="erreurChargement" x-cloak class="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 mb-4" x-text="erreurChargement"></div>
   
   <!-- Onglets -->
   <div class="flex gap-1 border-b border-slate-200 mb-6 no-print">
@@ -126,15 +184,25 @@
   <div x-show="!chargement" x-cloak>
 
     <!-- Onglet : Bilan de parcours -->
-    <div x-show="ongletActif === 'parcours'" x-cloak>
+    <div x-show="ongletActif === 'parcours'" x-cloak class="zone-impression">
+      <div class="print-header hidden print:grid">
+        <img class="print-header__logo" src="logo-cceeh.png" alt="Logo CCEEH" />
+        <h2 class="print-header__title">Bilan de parcours</h2>
+        <div aria-hidden="true"></div>
+      </div>
       <div class="flex items-center justify-between mb-4">
         <p class="text-sm text-slate-600">Total parcours : <span class="font-semibold" x-text="parcoursFiltres.length"></span></p>
+        <button @click="imprimer()" class="no-print px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors">Imprimer</button>
       </div>
       <div class="grid grid-cols-5 gap-3 mb-4 no-print">
         <input type="text" x-model="filtresParcours.recherche" placeholder="Nom ou prénom…"
           class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        <input type="text" maxlength="4" x-model="filtresParcours.annee" placeholder="Année"
-          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresParcours.annee" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Toutes années</option>
+          <template x-for="annee in anneesDisponiblesParcours" :key="annee">
+            <option :value="annee" x-text="annee"></option>
+          </template>
+        </select>
         <select x-model="filtresParcours.diplome" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
           <option value="">Tous les diplômes</option>
           <template x-for="d in referentielDiplomes" :key="d.id">
@@ -176,7 +244,7 @@
               <td class="px-3 py-2" x-text="ligne.adresse_actuelle"></td>
               <td class="px-3 py-2" x-text="ligne.contact"></td>
               <td class="px-3 py-2" x-text="ligne.statut"></td>
-              <td class="px-3 py-2" x-text="ligne.diplome || '—'"></td>
+              <td class="px-3 py-2" x-text="libelleDiplomeAvecSerie(ligne) || '—'"></td>
               <td class="px-3 py-2" x-text="ligne.annee || '—'"></td>
               <td class="px-3 py-2" x-text="ligne.etablissement"></td>
             </tr>
@@ -186,15 +254,25 @@
     </div>
 
     <!-- Onglet : Bilan de bacheliers -->
-    <div x-show="ongletActif === 'bacheliers'" x-cloak>
+    <div x-show="ongletActif === 'bacheliers'" x-cloak class="zone-impression">
+      <div class="print-header hidden print:grid">
+        <img class="print-header__logo" src="logo-cceeh.png" alt="Logo CCEEH" />
+        <h2 class="print-header__title">Bilan de bacheliers</h2>
+        <div aria-hidden="true"></div>
+      </div>
       <div class="flex items-center justify-between mb-4">
         <p class="text-sm text-slate-600">Total bacheliers : <span class="font-semibold" x-text="bacheliersFiltres.length"></span></p>
+        <button @click="imprimer()" class="no-print px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors">Imprimer</button>
       </div>
       <div class="grid grid-cols-4 gap-3 mb-4 no-print">
         <input type="text" x-model="filtresBacheliers.recherche" placeholder="Nom ou prénom…"
           class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        <input type="text" maxlength="4" x-model="filtresBacheliers.annee" placeholder="Année"
-          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresBacheliers.annee" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="">Toutes années</option>
+          <template x-for="annee in anneesDisponiblesBacheliers" :key="annee">
+            <option :value="annee" x-text="annee"></option>
+          </template>
+        </select>
         <input type="text" x-model="filtresBacheliers.serie" placeholder="Série"
           class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
         <select x-model="filtresBacheliers.civilite" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
@@ -234,15 +312,25 @@
     </div>
 
     <!-- Onglet : Bilan de professionnels -->
-    <div x-show="ongletActif === 'professionnels'" x-cloak>
+    <div x-show="ongletActif === 'professionnels'" x-cloak class="zone-impression">
+      <div class="print-header hidden print:grid">
+        <img class="print-header__logo" src="logo-cceeh.png" alt="Logo CCEEH" />
+        <h2 class="print-header__title">Bilan de professionnels</h2>
+        <div aria-hidden="true"></div>
+      </div>
       <div class="flex items-center justify-between mb-4">
         <p class="text-sm text-slate-600">Total Pro : <span class="font-semibold" x-text="professionnelsFiltres.length"></span></p>
+        <button @click="imprimer()" class="no-print px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-300 rounded-md hover:bg-slate-100 transition-colors">Imprimer</button>
       </div>
       <div class="grid grid-cols-4 gap-3 mb-4 no-print">
         <input type="text" x-model="filtresProfessionnels.recherche" placeholder="Nom ou prénom…"
           class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        <input type="text" x-model="filtresProfessionnels.annee" placeholder="Année (ou « En cours »)"
-          class="rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <select x-model="filtresProfessionnels.annee" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <option value="En cours">En cours</option>
+          <template x-for="annee in anneesDisponiblesProfessionnels" :key="annee">
+            <option :value="annee" x-text="annee"></option>
+          </template>
+        </select>
         <select x-model="filtresProfessionnels.secteur" class="rounded-md border border-slate-300 px-3 py-2 text-sm">
           <option value="">Tous secteurs</option>
           <template x-for="s in referentielSecteurs" :key="s.id">
