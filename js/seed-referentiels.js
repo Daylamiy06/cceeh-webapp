@@ -1,16 +1,7 @@
-// ============================================================================
-// seed-referentiels.js
-// Amorçage automatique des 6 référentiels au premier lancement de
-// l'application. Sans cet amorçage, l'application serait inutilisable tant que
-// l'administrateur n'a pas saisi manuellement chaque valeur.
-//
-// L'amorçage n'écrit que si le référentiel est totalement vide : il ne
-// écrase jamais des valeurs déjà personnalisées par l'administrateur
-// ============================================================================
-
 import { db, ref, get, set } from "./firebase-init.js";
 const CIVILITES_INITIALES = ["Monsieur", "Madame", "Mademoiselle"];
-const STATUTS_INITIAUX = ["élève", "étudiant", "professionnel", "autre"];
+const STATUTS_INITIAUX = ["élève", "étudiant", "professionnel"];
+
 const NIVEAUX_ETUDE_INITIAUX = [
   "6e",
   "5e",
@@ -40,15 +31,58 @@ const DIPLOMES_INITIAUX = [
   "Licence 1",
   "Licence 2",
   "Licence 3",
-  "Mastère 1",
-  "Mastère 2",
   "Master 1",
   "Master 2",
   "Doctorat",
 ];
 
-const PROFESSIONS_INITIALES = [];
-const SECTEURS_INITIAUX = [];
+const PROFESSIONS_INITIALES = [
+  "Agriculteur",
+  "Architecte",
+  "Artisan",
+  "Avocat",
+  "Chauffeur",
+  "Commerçant",
+  "Comptable",
+  "Employé",
+  "Enseignant",
+  "Entrepreneur",
+  "Fonctionnaire",
+  "Formateur",
+  "Ingénieur BTP",
+  "Ingénieur logiciel",
+  "Informaticien",
+  "Infirmier",
+  "Journaliste",
+  "Juriste",
+  "Médecin",
+  "Militaire",
+  "Ouvrier",
+  "Pharmacien",
+  "Policier",
+  "Professeur",
+  "Sage-femme",
+  "Technicien",
+];
+
+const SECTEURS_INITIAUX = [
+  "Administration",
+  "Agriculture",
+  "Artisanat",
+  "Bâtiment",
+  "Commerce",
+  "Communication",
+  "Droit",
+  "Éducation",
+  "Finance",
+  "Industrie",
+  "Informatique",
+  "Santé",
+  "Services",
+  "Tourisme",
+  "Transport",
+];
+
 const PLAN_AMORCAGE = {
   civilites: CIVILITES_INITIALES,
   statuts: STATUTS_INITIAUX,
@@ -58,33 +92,17 @@ const PLAN_AMORCAGE = {
   secteurs: SECTEURS_INITIAUX,
 };
 
-/**
- * Vérifie chaque référentiel et l'amorce s'il est vide.
- * Idempotent : peut être appelé à chaque démarrage de l'application sans
- * risque de doublons ni d'écrasement de données existantes.
- */
 async function assurerAmorcageReferentiels() {
   for (const [cle, valeurs] of Object.entries(PLAN_AMORCAGE)) {
     if (valeurs.length === 0) continue; // rien à amorcer pour ce référentiel
     const referenceCollection = ref(db, `referentiels/${cle}`);
     const snapshot = await get(referenceCollection);
     if (snapshot.exists()) continue; // déjà amorcé ou déjà personnalisé
-    for (const libelle of valeurs) {
-      const referenceNouvelleValeur = ref(
-        db,
-        `referentiels/${cle}/${cleFirebaseAleatoire()}`
-      );
+    for (const [index, libelle] of valeurs.entries()) {
+      const referenceNouvelleValeur = ref(db, `referentiels/${cle}/seed_${String(index + 1).padStart(2, "0")}`);
       await set(referenceNouvelleValeur, { libelle });
     }
   }
-}
-
-/**
- * Génère un identifiant simple pour l'amorçage initial (évite une
- * dépendance à push() ici, l'amorçage étant séquentiel et non concurrent).
- */
-function cleFirebaseAleatoire() {
-  return `seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export { assurerAmorcageReferentiels };
