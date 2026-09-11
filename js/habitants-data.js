@@ -4,7 +4,7 @@ import { db, ref, push, set, update, remove, get } from "./firebase-init.js";
 async function listerHabitants() {
   const snapshot = await get(ref(db, "habitants"));
   return objetVersTableau(snapshot.val()).sort((a, b) =>
-    a.nom_complet.localeCompare(b.nom_complet, "fr")
+    String(a.nom_complet || "").localeCompare(String(b.nom_complet || ""), "fr")
   );
 }
 
@@ -43,7 +43,8 @@ async function creerHabitant(donnees) {
 
 /** Modifie une fiche habitant existante. */
 function modifierHabitant(id, donnees) {
-  return update(ref(db, `habitants/${id}`), donnees);
+  const { id: _id, ...champs } = donnees || {};
+  return update(ref(db, `habitants/${id}`), champs);
 }
 
 /** Supprime un habitant ainsi que l'ensemble de ses parcours scolaires et activités professionnelles rattachés (suppression en cascade). */
@@ -61,14 +62,14 @@ async function supprimerHabitant(id) {
 }
 
 // --- Écriture : Parcours scolaire 
-
 function creerParcours(idHabitant, donnees) {
   const nouvelleReference = push(ref(db, "parcours"));
   return set(nouvelleReference, { id_habitant: idHabitant, ...donnees });
 }
 
 function modifierParcours(id, donnees) {
-  return update(ref(db, `parcours/${id}`), donnees);
+  const { id: _id, ...champs } = donnees || {};
+  return update(ref(db, `parcours/${id}`), champs);
 }
 
 function supprimerParcours(id) {
@@ -76,14 +77,14 @@ function supprimerParcours(id) {
 }
 
 // --- Écriture : Activité professionnelle
-
 function creerActivite(idHabitant, donnees) {
   const nouvelleReference = push(ref(db, "activites"));
   return set(nouvelleReference, { id_habitant: idHabitant, ...donnees });
 }
 
 function modifierActivite(id, donnees) {
-  return update(ref(db, `activites/${id}`), donnees);
+  const { id: _id, ...champs } = donnees || {};
+  return update(ref(db, `activites/${id}`), champs);
 }
 
 function supprimerActivite(id) {
@@ -110,19 +111,33 @@ function libelleCiviliteCourt(civilite) {
   return correspondances[civilite] || civilite;
 }
 
+/** Une activité sans date de fin est en cours, comme une activité cochée Encours. */
+function activiteEstEnCours(activite) {
+  return Boolean(activite?.en_cours) || !String(activite?.date_fin || "").trim();
+}
+
 /** Calcule la durée d'expérience d'une activité professionnelle affichée */
 function calculerExperience(activite) {
-  const anneeDebut = new Date(activite.date_debut).getFullYear();
-  const anneeReference = activite.en_cours ? new Date().getFullYear() : new Date(activite.date_fin).getFullYear();
+  const anneeDebut = new Date(activite?.date_debut).getFullYear();
+  const anneeReference = activiteEstEnCours(activite)
+    ? new Date().getFullYear()
+    : new Date(activite?.date_fin).getFullYear();
+  if (!Number.isInteger(anneeDebut) || !Number.isInteger(anneeReference)) return "—";
   const duree = Math.max(0, anneeReference - anneeDebut);
   return `${duree} ${duree === 1 ? "an" : "ans"}`;
 }
 
+function libelleDiplomeAvecSerie(parcours) {
+  if (parcours.diplome === "BAC" && parcours.serie) {
+    return `${parcours.diplome} ${parcours.serie}`;
+  }
+  return parcours.diplome || "";
+}
+
 // --- Utilitaire
-/** Convertit un objet Firebase { id: {...} } en tableau [{ id, ... }]. */
 function objetVersTableau(objet) {
   if (!objet) return [];
-  return Object.entries(objet).map(([id, valeur]) => ({ id, ...valeur }));
+  return Object.entries(objet).map(([id, valeur]) => ({ id, ...(valeur || {}) }));
 }
 
 export {
@@ -142,4 +157,6 @@ export {
   calculerContact,
   libelleCiviliteCourt,
   calculerExperience,
+  activiteEstEnCours,
+  libelleDiplomeAvecSerie,
 };
