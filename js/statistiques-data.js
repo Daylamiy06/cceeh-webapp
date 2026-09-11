@@ -1,11 +1,11 @@
-// statistiques-data.js
-import { db, ref, get } from "./firebase-init.js";
+import { db, ref, get } from "./firebase-init.js?v=20260826-2";
+import { activiteEstEnCours } from "./habitants-data.js?v=20260826-2";
 
 /* Lit une collection entière et la retourne sous forme de tableau [{id, ...}]. */
 async function lireCollection(nom) {
   const snapshot = await get(ref(db, nom));
   if (!snapshot.exists()) return [];
-  return Object.entries(snapshot.val()).map(([id, valeur]) => ({ id, ...valeur }));
+  return Object.entries(snapshot.val()).map(([id, valeur]) => ({ id, ...(valeur || {}) }));
 }
 
 /* Calcule les indicateurs chiffrés du tableau de bord */
@@ -27,7 +27,7 @@ async function calculerIndicateurs() {
   let totalDoctorat = 0;
 
   for (const etudiant of etudiants) {
-    const famille = familleDiplomeLePlusRecent(parcours, etudiant.id);
+    const famille = familleNiveauLePlusRecent(parcours, etudiant.id);
     if (famille === "Licence") totalLicence++;
     else if (famille === "Master") totalMaster++;
     else if (famille === "Doctorat") totalDoctorat++;
@@ -44,20 +44,20 @@ async function calculerIndicateurs() {
   };
 }
 
-/* Détermine la famille de diplôme (Licence/Master/Doctorat) du parcours le plus récent d'un habitant. */
-function familleDiplomeLePlusRecent(parcours, idHabitant) {
+function familleNiveauLePlusRecent(parcours, idHabitant) {
   const parcoursDeLHabitant = parcours
-    .filter((p) => p.id_habitant === idHabitant && p.diplome)
+    .filter((p) => p.id_habitant === idHabitant && p.niveau_etude)
     .sort((a, b) => Number(b.annee_fin || 0) - Number(a.annee_fin || 0));
 
   if (parcoursDeLHabitant.length === 0) return null;
-  return familleDiplome(parcoursDeLHabitant[0].diplome);
+  return familleDiplome(parcoursDeLHabitant[0].niveau_etude);
 }
 
 function familleDiplome(libelleDiplome) {
-  if (libelleDiplome.startsWith("Licence")) return "Licence";
-  if (libelleDiplome.startsWith("Master") || libelleDiplome.startsWith("Mastère")) return "Master";
-  if (libelleDiplome === "Doctorat") return "Doctorat";
+  const libelle = String(libelleDiplome || "");
+  if (libelle.startsWith("Licence")) return "Licence";
+  if (libelle.startsWith("Master") || libelle.startsWith("Mastère")) return "Master";
+  if (libelle === "Doctorat") return "Doctorat";
   return null;
 }
 
@@ -65,7 +65,7 @@ function familleDiplome(libelleDiplome) {
 async function calculerRepartitionDiplomes(annee) {
   const parcours = await lireCollection("parcours");
   const parcoursDeLAnnee = parcours.filter(
-    (p) => p.diplome && p.annee_fin === String(annee)
+    (p) => p.diplome && String(p.annee_fin) === String(annee)
   );
 
   const compteurs = {};
@@ -90,11 +90,43 @@ async function calculerEvolutionActivites(anneeDepuis, anneeJusqua) {
 }
 
 function activiteActivePourAnnee(activite, annee) {
-  const anneeDebut = new Date(activite.date_debut).getFullYear();
-  if (anneeDebut > annee) return false;
+  const anneeDebut = new Date(activite?.date_debut).getFullYear();
+  if (!Number.isInteger(anneeDebut) || anneeDebut > annee) return false;
 
-  if (activite.en_cours) return true;
-  const anneeFin = new Date(activite.date_fin).getFullYear();
-  return anneeFin >= annee;
+  if (activiteEstEnCours(activite)) return true;
+  const anneeFin = new Date(activite?.date_fin).getFullYear();
+  return Number.isInteger(anneeFin) && anneeFin >= annee;
 }
-export { calculerIndicateurs, calculerRepartitionDiplomes, calculerEvolutionActivites };
+
+async function anneesDisponiblesDiplomes() {
+  const parcours = await lireCollection("parcours");
+  const annees = new Set();
+  for (const p of parcours) {
+    const annee = Number(p.annee_fin);
+    if (p.diplome && Number.isInteger(annee)) annees.add(annee);
+  }
+  return [...annees].sort((a, b) => b - a);
+}
+
+async function anneesDisponiblesActivites() {
+  const activites = await lireCollection("activites");
+  const annees = new Set();
+
+  for (const activite of activites) {
+    for (const date of [activite.date_debut, activite.date_fin]) {
+      if (!date) continue;
+      const annee = new Date(date).getFullYear();
+      if (Number.isInteger(annee)) annees.add(annee);
+    }
+  }
+
+  return [...annees].sort((a, b) => a - b);
+}
+
+export {
+  calculerIndicateurs,
+  calculerRepartitionDiplomes,
+  calculerEvolutionActivites,
+  anneesDisponiblesDiplomes,
+  anneesDisponiblesActivites,
+};
