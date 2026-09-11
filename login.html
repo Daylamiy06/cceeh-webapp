@@ -15,14 +15,18 @@
         enCours: false,
         _firebasePret: null,
         _connexion: null,
+        _estAdmin: null,
+		_deconnexion: null,
 
         init() {
           this._firebasePret = this._chargerFirebase();
         },
 
         async _chargerFirebase() {
-          const [{ connexion }] = await Promise.all([import("./js/firebase-init.js")]);  
+          const [{ connexion, estAdmin, deconnexion }] = await Promise.all([import("./js/firebase-init.js")]);  
           this._connexion = connexion;
+          this._estAdmin = estAdmin;
+  		this._deconnexion = deconnexion;
         },
 
         async seConnecter() {
@@ -30,10 +34,15 @@
           this.enCours = true;
           try {
             await this._firebasePret; // attend que Firebase soit chargé
-            await this._connexion(this.email, this.motDePasse);
-            window.location.href = "index.html";
+            const resultat = await this._connexion(this.email, this.motDePasse);
+			const utilisateur = resultat.user;
+			if (!(await this._estAdmin(utilisateur))) {
+  			await this._deconnexion();
+  			throw new Error("Accès refusé !");
+			}
+			window.location.href = "index.html";
           } catch (erreur) {
-            this.messageErreur = "Email ou mot de passe incorrect.";
+            this.messageErreur = "Impossible de vous connecter. Vérifiez vos identifiants ou contactez le responsable.";
           } finally {
             this.enCours = false;
           }
