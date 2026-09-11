@@ -1,23 +1,36 @@
 <script>
+  var VALEUR_AUTRE = "__autre__";
+
+  function genererAnneesDisponibles() {
+    const anneeCourante = new Date().getFullYear();
+    const annees = [];
+    for (let a = anneeCourante; a >= anneeCourante - 60; a--) annees.push(String(a));
+    return annees;
+  }
+  var ANNEES_DISPONIBLES = genererAnneesDisponibles();
+
   function pageHabitants() {
     return {
       vue: "liste", // "liste" | "fiche"
       chargement: true,
+      erreurChargement: "",
+      messageErreur: "",
       messageSucces: "",
+      operationEnCours: false,
       habitants: [],
       recherche: "",
       filtreStatut: "",
       idHabitantCourant: null,
-      formulaireHabitant: this.habitantVide(),
+      formulaireHabitant: creerHabitantVide(),
       erreurEmail: "",
       listeParcours: [],
       listeActivites: [],
       modaleParcoursOuverte: false,
       idParcoursEnEdition: null,
-      formulaireParcours: this.parcoursVide(),
+      formulaireParcours: creerParcoursVide(),
       modaleActiviteOuverte: false,
       idActiviteEnEdition: null,
-      formulaireActivite: this.activiteVide(),
+      formulaireActivite: creerActiviteVide(),
       confirmationSuppression: { ouverte: false, message: "", action: null },
       referentielCivilites: [],
       referentielStatuts: [],
@@ -25,7 +38,14 @@
       referentielDiplomes: [],
       referentielProfessions: [],
       referentielSecteurs: [],
+      anneesDisponibles: ANNEES_DISPONIBLES,
+      autreStatut: "",
+      autreNiveauEtude: "",
+      autreDiplome: "",
+      autreProfession: "",
+      autreSecteur: "",
       _lireReferentiel: null,
+      _ajouterValeur: null,
       _listerHabitants: null,
       _listerParcoursDe: null,
       _listerActivitesDe: null,
@@ -41,32 +61,41 @@
       _calculerContact: null,
       _libelleCiviliteCourt: null,
       _calculerExperience: null,
+      _libelleDiplomeAvecSerie: null,
 
       // Initialisation
       async init() {
-        const [modReferentiels, modHabitants] = await Promise.all([
-          import("../js/referentiels.js"),
-          import("../js/habitants-data.js"),
-        ]);
+        try {
+          const [modReferentiels, modHabitants] = await Promise.all([
+            import("./js/referentiels.js?v=20260826-2"),
+            import("./js/habitants-data.js?v=20260826-2"),
+          ]);
 
-        this._lireReferentiel = modReferentiels.lireReferentiel;
-        this._listerHabitants = modHabitants.listerHabitants;
-        this._listerParcoursDe = modHabitants.listerParcoursDe;
-        this._listerActivitesDe = modHabitants.listerActivitesDe;
-        this._creerHabitant = modHabitants.creerHabitant;
-        this._modifierHabitant = modHabitants.modifierHabitant;
-        this._supprimerHabitant = modHabitants.supprimerHabitant;
-        this._creerParcours = modHabitants.creerParcours;
-        this._modifierParcours = modHabitants.modifierParcours;
-        this._supprimerParcours = modHabitants.supprimerParcours;
-        this._creerActivite = modHabitants.creerActivite;
-        this._modifierActivite = modHabitants.modifierActivite;
-        this._supprimerActivite = modHabitants.supprimerActivite;
-        this._calculerContact = modHabitants.calculerContact;
-        this._libelleCiviliteCourt = modHabitants.libelleCiviliteCourt;
-        this._calculerExperience = modHabitants.calculerExperience;
-        await this.chargerReferentiels();
-        await this.chargerListeHabitants();
+          this._lireReferentiel = modReferentiels.lireReferentiel;
+          this._ajouterValeur = modReferentiels.ajouterValeur;
+          this._listerHabitants = modHabitants.listerHabitants;
+          this._listerParcoursDe = modHabitants.listerParcoursDe;
+          this._listerActivitesDe = modHabitants.listerActivitesDe;
+          this._creerHabitant = modHabitants.creerHabitant;
+          this._modifierHabitant = modHabitants.modifierHabitant;
+          this._supprimerHabitant = modHabitants.supprimerHabitant;
+          this._creerParcours = modHabitants.creerParcours;
+          this._modifierParcours = modHabitants.modifierParcours;
+          this._supprimerParcours = modHabitants.supprimerParcours;
+          this._creerActivite = modHabitants.creerActivite;
+          this._modifierActivite = modHabitants.modifierActivite;
+          this._supprimerActivite = modHabitants.supprimerActivite;
+          this._calculerContact = modHabitants.calculerContact;
+          this._libelleCiviliteCourt = modHabitants.libelleCiviliteCourt;
+          this._calculerExperience = modHabitants.calculerExperience;
+          this._libelleDiplomeAvecSerie = modHabitants.libelleDiplomeAvecSerie;
+          await this.chargerReferentiels();
+          await this.chargerListeHabitants();
+        } catch (erreur) {
+          this.erreurChargement = "Impossible de charger les données des habitants.";
+        } finally {
+          this.chargement = false;
+        }
       },
 
       async chargerReferentiels() {
@@ -90,13 +119,17 @@
       // Vue liste 
       async chargerListeHabitants() {
         this.chargement = true;
-        this.habitants = await this._listerHabitants();
-        this.chargement = false;
+        try {
+          this.habitants = await this._listerHabitants();
+          this.erreurChargement = "";
+        } finally {
+          this.chargement = false;
+        }
       },
 
       get habitantsFiltres() {
         return this.habitants.filter((h) => {
-          const correspondNom = h.nom_complet
+          const correspondNom = String(h.nom_complet || "")
             .toLowerCase()
             .includes(this.recherche.toLowerCase());
           const correspondStatut =
@@ -111,34 +144,37 @@
 
       // Vue fiche
       habitantVide() {
-        return {
-          civilite: "",
-          nom_complet: "",
-          date_naissance: "",
-          lieu_naissance: "",
-          adresse_actuelle: "",
-          telephone: "",
-          email: "",
-          statut_actuel: "",
-        };
+        return creerHabitantVide();
       },
 
       ouvrirNouvelleFiche() {
         this.idHabitantCourant = null;
         this.formulaireHabitant = this.habitantVide();
+        this.autreStatut = "";
+        this.autreNiveauEtude = "";
+        this.autreDiplome = "";
+        this.autreProfession = "";
+        this.autreSecteur = "";
         this.listeParcours = [];
         this.listeActivites = [];
         this.erreurEmail = "";
         this.vue = "fiche";
+        history.pushState({section: "habitants", vue: "fiche"}, "");
       },
 
       async ouvrirFicheExistante(id) {
         this.idHabitantCourant = id;
         const habitant = this.habitants.find((h) => h.id === id);
         this.formulaireHabitant = { ...habitant };
+        this.autreStatut = "";
+        this.autreNiveauEtude = "";
+        this.autreDiplome = "";
+        this.autreProfession = "";
+        this.autreSecteur = "";
         this.erreurEmail = "";
         await this.rafraichirParcoursEtActivites();
         this.vue = "fiche";
+        history.pushState({section: "habitants", vue: "fiche"}, "");
       },
 
       async rafraichirParcoursEtActivites() {
@@ -148,8 +184,11 @@
         ]);
       },
 
-      revenirALaListe() {
+      revenirALaListe(gererHistorique = true) {
         this.vue = "liste";
+        if (gererHistorique && history.state?.section === "habitants" && history.state?.vue === "fiche") {
+          history.back();
+        }
       },
 
       validerEmail() {
@@ -163,16 +202,28 @@
       },
 
       async enregistrerHabitant() {
+        if (this.operationEnCours) return;
         this.validerEmail();
         if (this.erreurEmail) return;
-        if (this.idHabitantCourant) {
-          await this._modifierHabitant(this.idHabitantCourant, this.formulaireHabitant);
-        } else {
-          this.idHabitantCourant = await this._creerHabitant(this.formulaireHabitant);
-        }
+        this.operationEnCours = true;
+        try {
+          this.formulaireHabitant.statut_actuel = await this._valeurAutre(
+            this.formulaireHabitant.statut_actuel, this.autreStatut, "statuts", this.referentielStatuts
+          );
 
-        await this.chargerListeHabitants();
-        this.afficherMessageSucces("Habitant enregistré avec succès.");
+          if (this.idHabitantCourant) {
+            await this._modifierHabitant(this.idHabitantCourant, this.formulaireHabitant);
+          } else {
+            this.idHabitantCourant = await this._creerHabitant(this.formulaireHabitant);
+          }
+
+          await this.chargerListeHabitants();
+          this.afficherMessageSucces("Habitant enregistré avec succès.");
+        } catch (erreur) {
+          this.afficherMessageErreur("Impossible d'enregistrer cet habitant.");
+        } finally {
+          this.operationEnCours = false;
+        }
       },
 
       demanderSuppressionHabitant(habitant) {
@@ -190,24 +241,24 @@
 
       // Modale Parcours
       parcoursVide() {
-        return {
-          etablissement: "",
-          lieu: "",
-          niveau_etude: "",
-          serie: "",
-          annee_debut: "",
-          annee_fin: "",
-          filiere_etude: "",
-          diplome: "",
-        };
+        return creerParcoursVide();
       },
 
       get filiereObligatoire() {
-        const niveauxPostBac = [
-          "Licence 1", "Licence 2", "Licence 3",
-          "Master 1", "Master 2", "Doctorat",
+        const niveauxSansFiliere = [
+          "6e", "5e", "4e", "3e", "Seconde", "Première", "Terminale",
         ];
-        return niveauxPostBac.includes(this.formulaireParcours.niveau_etude);
+        return (
+          this.formulaireParcours.niveau_etude !== "" &&
+          !niveauxSansFiliere.includes(this.formulaireParcours.niveau_etude)
+        );
+      },
+
+      // Le niveau d'étude change : la filière n'est plus exigée pour les niveaux secondaires (6e à Terminale).
+      surChangementNiveauEtude() {
+        if (this.formulaireParcours.niveau_etude !== VALEUR_AUTRE) this.autreNiveauEtude = "";
+        if (!this.filiereObligatoire) this.formulaireParcours.filiere_etude = "";
+        if (this.formulaireParcours.niveau_etude !== "Terminale") this.formulaireParcours.serie = "";
       },
 
       ouvrirFormulaireParcours(parcoursExistant = null) {
@@ -215,6 +266,8 @@
         this.formulaireParcours = parcoursExistant
           ? { ...parcoursExistant }
           : this.parcoursVide();
+        this.autreNiveauEtude = "";
+        this.autreDiplome = "";
         this.modaleParcoursOuverte = true;
       },
 
@@ -223,14 +276,29 @@
       },
 
       async enregistrerParcours() {
-        if (this.idParcoursEnEdition) {
-          await this._modifierParcours(this.idParcoursEnEdition, this.formulaireParcours);
-        } else {
-          await this._creerParcours(this.idHabitantCourant, this.formulaireParcours);
+        if (this.operationEnCours) return;
+        this.operationEnCours = true;
+        try {
+          this.formulaireParcours.niveau_etude = await this._valeurAutre(
+            this.formulaireParcours.niveau_etude, this.autreNiveauEtude, "niveaux_etude", this.referentielNiveaux
+          );
+          this.formulaireParcours.diplome = await this._valeurAutre(
+            this.formulaireParcours.diplome, this.autreDiplome, "diplomes", this.referentielDiplomes
+          );
+
+          if (this.idParcoursEnEdition) {
+            await this._modifierParcours(this.idParcoursEnEdition, this.formulaireParcours);
+          } else {
+            await this._creerParcours(this.idHabitantCourant, this.formulaireParcours);
+          }
+          await this.rafraichirParcoursEtActivites();
+          this.fermerModaleParcours();
+          this.afficherMessageSucces("Parcours enregistré avec succès.");
+        } catch (erreur) {
+          this.afficherMessageErreur("Impossible d'enregistrer ce parcours.");
+        } finally {
+          this.operationEnCours = false;
         }
-        await this.rafraichirParcoursEtActivites();
-        this.fermerModaleParcours();
-        this.afficherMessageSucces("Parcours enregistré avec succès.");
       },
 
       demanderSuppressionParcours(parcours) {
@@ -247,15 +315,7 @@
 
       // Modale Activité professionnelle
       activiteVide() {
-        return {
-          profession: "",
-          secteur: "",
-          entreprise: "",
-          lieu_travail: "",
-          date_debut: "",
-          date_fin: "",
-          en_cours: false,
-        };
+        return creerActiviteVide();
       },
 
       ouvrirFormulaireActivite(activiteExistante = null) {
@@ -263,6 +323,8 @@
         this.formulaireActivite = activiteExistante
           ? { ...activiteExistante }
           : this.activiteVide();
+        this.autreProfession = "";
+        this.autreSecteur = "";
         this.modaleActiviteOuverte = true;
       },
 
@@ -271,19 +333,32 @@
       },
 
       async enregistrerActivite() {
-        // Si "En cours" est coché, la date de fin n'est pas renseignée.
-        if (this.formulaireActivite.en_cours) {
-          this.formulaireActivite.date_fin = "";
-        }
+        if (this.operationEnCours) return;
+        this.operationEnCours = true;
+        try {
+          // Si "En cours" est coché, la date de fin n'est pas renseignée.
+          if (this.formulaireActivite.en_cours) this.formulaireActivite.date_fin = "";
 
-        if (this.idActiviteEnEdition) {
-          await this._modifierActivite(this.idActiviteEnEdition, this.formulaireActivite);
-        } else {
-          await this._creerActivite(this.idHabitantCourant, this.formulaireActivite);
+          this.formulaireActivite.profession = await this._valeurAutre(
+            this.formulaireActivite.profession, this.autreProfession, "professions", this.referentielProfessions
+          );
+          this.formulaireActivite.secteur = await this._valeurAutre(
+            this.formulaireActivite.secteur, this.autreSecteur, "secteurs", this.referentielSecteurs
+          );
+
+          if (this.idActiviteEnEdition) {
+            await this._modifierActivite(this.idActiviteEnEdition, this.formulaireActivite);
+          } else {
+            await this._creerActivite(this.idHabitantCourant, this.formulaireActivite);
+          }
+          await this.rafraichirParcoursEtActivites();
+          this.fermerModaleActivite();
+          this.afficherMessageSucces("Activité enregistrée avec succès.");
+        } catch (erreur) {
+          this.afficherMessageErreur("Impossible d'enregistrer cette activité.");
+        } finally {
+          this.operationEnCours = false;
         }
-        await this.rafraichirParcoursEtActivites();
-        this.fermerModaleActivite();
-        this.afficherMessageSucces("Activité enregistrée avec succès.");
       },
 
       demanderSuppressionActivite(activite) {
@@ -304,12 +379,26 @@
       },
 
       async confirmerSuppression() {
+        if (this.operationEnCours) return;
         const action = this.confirmationSuppression.action;
         this.confirmationSuppression = { ouverte: false, message: "", action: null };
-        if (action) await action();
+        if (!action) return;
+        this.operationEnCours = true;
+        try {
+          await action();
+        } catch (erreur) {
+          this.afficherMessageErreur("Impossible de terminer la suppression.");
+        } finally {
+          this.operationEnCours = false;
+        }
       },
 
       // Messages de succès
+      afficherMessageErreur(texte) {
+        this.messageErreur = texte;
+        setTimeout(() => { this.messageErreur = ""; }, 4000);
+      },
+
       afficherMessageSucces(texte) {
         this.messageSucces = texte;
         setTimeout(() => { this.messageSucces = ""; }, 3000);
@@ -325,11 +414,63 @@
       calculerExperience(activite) {
         return this._calculerExperience(activite);
       },
+      // Affiche le diplôme avec sa série pour un BAC (ex. "BAC D"), sinon le diplôme seul.
+      libelleDiplomeAvecSerie(parcours) {
+        return this._libelleDiplomeAvecSerie(parcours);
+      },
+
+      async _valeurAutre(valeurSelectionnee, texteAutre, cleReferentiel, tableauReferentielLocal) {
+        if (valeurSelectionnee !== VALEUR_AUTRE) return valeurSelectionnee;
+        const libelle = String(texteAutre || "").trim();
+        if (!libelle) throw new Error("La valeur personnalisée est obligatoire.");
+        const valeurCreee = await this._ajouterValeur(cleReferentiel, libelle);
+        tableauReferentielLocal.push(valeurCreee);
+        return valeurCreee.libelle;
+      },
     };
   }
+  
+  function creerHabitantVide() {
+    return {
+      civilite: "",
+      nom_complet: "",
+      date_naissance: "",
+      lieu_naissance: "",
+      adresse_actuelle: "",
+      telephone: "",
+      email: "",
+      statut_actuel: "",
+    };
+  }
+
+  function creerParcoursVide() {
+    return {
+      etablissement: "",
+      lieu: "",
+      niveau_etude: "",
+      serie: "",
+      annee_debut: "",
+      annee_fin: "",
+      filiere_etude: "",
+      diplome: "",
+    };
+  }
+
+  function creerActiviteVide() {
+    return {
+      profession: "",
+      secteur: "",
+      entreprise: "",
+      lieu_travail: "",
+      date_debut: "",
+      date_fin: "",
+      en_cours: false,
+    };
+  }
+  
   window.pageHabitants = pageHabitants;
 </script>
-<div x-data="pageHabitants()" x-init="init()">
+<div x-data="pageHabitants()">
 
   <!-- VUE LISTE -->
   <div x-show="vue === 'liste'" x-cloak>
@@ -364,9 +505,10 @@
     </div>
     <!-- Tableau des habitants + zone imprimable (§6.4) -->
     <div x-show="!chargement && habitantsFiltres.length > 0" x-cloak class="zone-impression">
-      <div class="hidden print:block mb-4">
-        <h2 class="text-lg font-bold">Liste des habitants</h2>
-        <p class="text-sm">Coopérative Culturelle des Élèves et Étudiants de Hantsindzi</p>
+      <div class="print-header hidden print:grid">
+        <img class="print-header__logo" src="logo-cceeh.png" alt="Logo CCEEH" />
+        <h2 class="print-header__title">Liste des habitants</h2>
+        <div aria-hidden="true"></div>
       </div>
       <table class="w-full text-sm border-collapse">
         <thead>
@@ -407,6 +549,7 @@
     <h1 class="text-lg font-semibold text-slate-800 mb-6">
       <span x-text="idHabitantCourant ? 'Modifier un habitant' : 'Nouvel habitant'"></span>
     </h1>
+    <div x-show="erreurChargement || messageErreur" x-cloak class="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 mb-4" x-text="erreurChargement || messageErreur"></div>
 
     <!-- Bloc Informations personnelles -->
     <section class="bg-white border border-slate-200 rounded-lg p-6 mb-6">
@@ -426,8 +569,8 @@
           <input type="text" maxlength="50" required x-model="formulaireHabitant.nom_complet" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
         </div>
         <div>
-          <label class="block text-sm text-slate-600 mb-1">Date de naissance</label>
-          <input type="date" x-model="formulaireHabitant.date_naissance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+          <label class="block text-sm text-slate-600 mb-1">Date de naissance <span class="text-red-500">*</span></label>
+          <input type="date" required x-model="formulaireHabitant.date_naissance" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
         </div>
         <div>
           <label class="block text-sm text-slate-600 mb-1">Lieu de naissance</label>
@@ -448,15 +591,19 @@
         </div>
         <div>
           <label class="block text-sm text-slate-600 mb-1">Statut actuel <span class="text-red-500">*</span></label>
-          <select x-model="formulaireHabitant.statut_actuel" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="formulaireHabitant.statut_actuel" required @change="if (formulaireHabitant.statut_actuel !== '__autre__') autreStatut = ''" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner…</option>
             <template x-for="s in referentielStatuts" :key="s.id">
               <option :value="s.libelle" x-text="s.libelle"></option>
             </template>
+            <option value="__autre__">Autre</option>
           </select>
+          <input x-show="formulaireHabitant.statut_actuel === '__autre__'" x-cloak type="text" maxlength="50"
+            :required="formulaireHabitant.statut_actuel === '__autre__'" x-model="autreStatut"
+            placeholder="Préciser le statut…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm mt-2" />
         </div>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 transition-colors">Enregistrer</button>
+          <button type="submit" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Enregistrer</button>
         </div>
       </form>
     </section>
@@ -492,7 +639,7 @@
               <td class="py-2" x-text="p.annee_debut || '—'"></td>
               <td class="py-2" x-text="p.annee_fin || '—'"></td>
               <td class="py-2" x-text="p.filiere_etude || '—'"></td>
-              <td class="py-2" x-text="p.diplome || '—'"></td>
+              <td class="py-2" x-text="libelleDiplomeAvecSerie(p) || '—'"></td>
               <td class="py-2">
                 <button @click="ouvrirFormulaireParcours(p)" class="text-slate-600 hover:text-slate-900 mr-2">Modifier</button>
                 <button @click="demanderSuppressionParcours(p)" class="text-red-600 hover:text-red-800">Supprimer</button>
@@ -566,43 +713,61 @@
         </div>
         <div>
           <label class="block text-sm text-slate-600 mb-1">Niveau d'étude <span class="text-red-500">*</span></label>
-          <select x-model="formulaireParcours.niveau_etude" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="formulaireParcours.niveau_etude" required @change="surChangementNiveauEtude()" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner…</option>
             <template x-for="n in referentielNiveaux" :key="n.id">
               <option :value="n.libelle" x-text="n.libelle"></option>
             </template>
+            <option value="__autre__">Autre</option>
+          </select>
+          <input x-show="formulaireParcours.niveau_etude === '__autre__'" x-cloak type="text" maxlength="50"
+            :required="formulaireParcours.niveau_etude === '__autre__'" x-model="autreNiveauEtude"
+            placeholder="Préciser le niveau…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm mt-2" />
+        </div>
+        <!-- Série : uniquement si Niveau = Terminale, obligatoire tant qu'elle est visible -->
+        <div x-show="formulaireParcours.niveau_etude === 'Terminale'" x-cloak>
+          <label class="block text-sm text-slate-600 mb-1">Série<span class="text-red-500">*</span></label>
+          <input type="text" :required="formulaireParcours.niveau_etude === 'Terminale'" x-model="formulaireParcours.serie" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-sm text-slate-600 mb-1">Année de début <span class="text-red-500">*</span></label>
+          <select required x-model="formulaireParcours.annee_debut" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="a in anneesDisponibles" :key="a">
+              <option :value="a" x-text="a"></option>
+            </template>
           </select>
         </div>
-        <!-- Série : uniquement si Niveau = Terminale -->
-        <div x-show="formulaireParcours.niveau_etude === 'Terminale'" x-cloak>
-          <label class="block text-sm text-slate-600 mb-1">Série</label>
-          <input type="text" x-model="formulaireParcours.serie" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        </div>
         <div>
-          <label class="block text-sm text-slate-600 mb-1">Année de début</label>
-          <input type="text" maxlength="4" pattern="[0-9]{4}" x-model="formulaireParcours.annee_debut" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="AAAA" />
+          <label class="block text-sm text-slate-600 mb-1">Année de fin <span class="text-red-500">*</span></label>
+          <select required x-model="formulaireParcours.annee_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <option value="" disabled>Sélectionner…</option>
+            <template x-for="a in anneesDisponibles" :key="a">
+              <option :value="a" x-text="a"></option>
+            </template>
+          </select>
         </div>
-        <div>
-          <label class="block text-sm text-slate-600 mb-1">Année de fin</label>
-          <input type="text" maxlength="4" pattern="[0-9]{4}" x-model="formulaireParcours.annee_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="AAAA" />
-        </div>
-        <!-- Filière : obligatoire uniquement si niveau post-bac -->
-        <div class="col-span-2">
-          <label class="block text-sm text-slate-600 mb-1">Filière d'étude<span x-show="filiereObligatoire" x-cloak class="text-red-500">*</span></label>
+        <!-- Filière : visible et obligatoire uniquement si niveau supérieur (pas 6e à Terminale) -->
+        <div class="col-span-2" x-show="filiereObligatoire" x-cloak>
+          <label class="block text-sm text-slate-600 mb-1">Filière d'étude<span class="text-red-500">*</span></label>
           <input type="text" maxlength="50" :required="filiereObligatoire" x-model="formulaireParcours.filiere_etude" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">
           <label class="block text-sm text-slate-600 mb-1">Diplôme obtenu</label>
-          <select x-model="formulaireParcours.diplome" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="formulaireParcours.diplome" @change="if (formulaireParcours.diplome !== '__autre__') autreDiplome = ''" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <option value="">— Aucun —</option>
             <template x-for="d in referentielDiplomes" :key="d.id">
               <option :value="d.libelle" x-text="d.libelle"></option>
             </template>
+            <option value="__autre__">Autre</option>
           </select>
+          <input x-show="formulaireParcours.diplome === '__autre__'" x-cloak type="text" maxlength="50"
+            :required="formulaireParcours.diplome === '__autre__'" x-model="autreDiplome"
+            placeholder="Préciser le diplôme…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm mt-2" />
         </div>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" @click="fermerModaleParcours()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900">Enregistrer</button>
+          <button type="submit" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
         </div>
       </form>
     </div>
@@ -615,21 +780,29 @@
       <form @submit.prevent="enregistrerActivite()" class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm text-slate-600 mb-1">Profession <span class="text-red-500">*</span></label>
-          <select x-model="formulaireActivite.profession" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="formulaireActivite.profession" required @change="if (formulaireActivite.profession !== '__autre__') autreProfession = ''" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner…</option>
             <template x-for="p in referentielProfessions" :key="p.id">
               <option :value="p.libelle" x-text="p.libelle"></option>
             </template>
+            <option value="__autre__">Autre</option>
           </select>
+          <input x-show="formulaireActivite.profession === '__autre__'" x-cloak type="text" maxlength="50"
+            :required="formulaireActivite.profession === '__autre__'" x-model="autreProfession"
+            placeholder="Préciser la profession…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm mt-2" />
         </div>
         <div>
           <label class="block text-sm text-slate-600 mb-1">Secteur <span class="text-red-500">*</span></label>
-          <select x-model="formulaireActivite.secteur" required class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <select x-model="formulaireActivite.secteur" required @change="if (formulaireActivite.secteur !== '__autre__') autreSecteur = ''" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner…</option>
             <template x-for="s in referentielSecteurs" :key="s.id">
               <option :value="s.libelle" x-text="s.libelle"></option>
             </template>
+            <option value="__autre__">Autre</option>
           </select>
+          <input x-show="formulaireActivite.secteur === '__autre__'" x-cloak type="text" maxlength="50"
+            :required="formulaireActivite.secteur === '__autre__'" x-model="autreSecteur"
+            placeholder="Préciser le secteur…" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm mt-2" />
         </div>
         <div class="col-span-2">
           <label class="block text-sm text-slate-600 mb-1">Entreprise <span class="text-red-500">*</span></label>
@@ -644,15 +817,15 @@
           <input type="date" required x-model="formulaireActivite.date_debut" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="block text-sm text-slate-600 mb-1">Date de fin</label>
-          <input type="date" :disabled="formulaireActivite.en_cours" x-model="formulaireActivite.date_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"/>
+          <label class="block text-sm text-slate-600 mb-1">Date de fin<span x-show="!formulaireActivite.en_cours" x-cloak class="text-red-500">*</span></label>
+          <input type="date" :required="!formulaireActivite.en_cours" :disabled="formulaireActivite.en_cours" x-model="formulaireActivite.date_fin" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100"/>
           <label class="flex items-center gap-2 mt-2 text-sm text-slate-600">
             <input type="checkbox" x-model="formulaireActivite.en_cours" />En cours
           </label>
         </div>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" @click="fermerModaleActivite()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
-          <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900">Enregistrer</button>
+          <button type="submit" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
         </div>
       </form>
     </div>
@@ -664,10 +837,12 @@
       <p class="text-sm text-slate-700 mb-6" x-text="confirmationSuppression.message"></p>
       <div class="flex justify-end gap-2">
         <button @click="annulerSuppression()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
-        <button @click="confirmerSuppression()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">Supprimer</button>
+        <button @click="confirmerSuppression()" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">Supprimer</button>
       </div>
     </div>
   </div>
+
+  <div x-show="messageErreur" x-cloak x-transition class="fixed bottom-6 left-6 bg-red-600 text-white text-sm px-4 py-2 rounded-md shadow-lg" x-text="messageErreur"></div>
 
   <!-- Bandeau de message de succès -->
   <div x-show="messageSucces" x-cloak x-transition
