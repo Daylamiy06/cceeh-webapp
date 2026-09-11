@@ -3,9 +3,9 @@
     return {
       REFERENTIELS: [],
       chargement: true,
+      operationEnCours: false,
       ongletActif: "civilites",
       valeursParReferentiel: {},
-      arreterEcoutes: [],
       nouvelleValeur: "",
       idEnEdition: null,
       libelleEnEdition: "",
@@ -15,42 +15,37 @@
       _db: null,
       _ref: null,
       _get: null,
-      _ecouterReferentiel: null,
       _ajouterValeur: null,
       _modifierValeur: null,
       _supprimerValeur: null,
 
       async init() {
-        const [modFirebase, modReferentiels] = await Promise.all([
-          import("../js/firebase-init.js"),
-          import("../js/referentiels.js"),
-        ]);
+        try {
+          const [modFirebase, modReferentiels] = await Promise.all([
+            import("./js/firebase-init.js?v=20260826-2"),
+            import("./js/referentiels.js?v=20260826-2"),
+          ]);
 
-        this._db = modFirebase.db;
-        this._ref = modFirebase.ref;
-        this._get = modFirebase.get;
-        this._ecouterReferentiel = modReferentiels.ecouterReferentiel;
-        this._ajouterValeur = modReferentiels.ajouterValeur;
-        this._modifierValeur = modReferentiels.modifierValeur;
-        this._supprimerValeur = modReferentiels.supprimerValeur;
-        this.REFERENTIELS = modReferentiels.REFERENTIELS;
-        this.arreterEcoutes = this.REFERENTIELS.map((referentiel) =>
-          this._ecouterReferentiel(referentiel.cle, (valeurs) => {
-            this.valeursParReferentiel[referentiel.cle] = valeurs;
-            this.chargement = false;
-          })
-        );
-
-        const conteneur = document.getElementById("zone-affichage");
-        if (conteneur) {
-          const observateur = new MutationObserver(() => {
-            if (!document.body.contains(this.$root)) {
-              this.arreterEcoutes.forEach((arreter) => arreter());
-              observateur.disconnect();
-            }
-          });
-          observateur.observe(conteneur, { childList: true });
+          this._db = modFirebase.db;
+          this._ref = modFirebase.ref;
+          this._get = modFirebase.get;
+          this._ajouterValeur = modReferentiels.ajouterValeur;
+          this._modifierValeur = modReferentiels.modifierValeur;
+          this._supprimerValeur = modReferentiels.supprimerValeur;
+          this.REFERENTIELS = modReferentiels.REFERENTIELS;
+          this.valeursParReferentiel = await modReferentiels.lireReferentiels();
+        } catch (erreur) {
+          this.afficherMessageErreur("Impossible de charger les référentiels.");
+        } finally {
+          this.chargement = false;
         }
+      },
+
+      /** Reflète localement un ajout ou une modification, sans re-solliciter Firebase. */
+      _appliquerValeurLocale(cle, valeur) {
+        const liste = (this.valeursParReferentiel[cle] || []).filter((v) => v.id !== valeur.id);
+        liste.push(valeur);
+        this.valeursParReferentiel[cle] = liste;
       },
 
       get valeursDeLOngletActif() {
@@ -59,12 +54,20 @@
 
       // Ajout 
       async ajouter() {
+        if (this.operationEnCours) return;
         const libelle = this.nouvelleValeur.trim();
         if (!libelle) return;
-
-        await this._ajouterValeur(this.ongletActif, libelle);
-        this.nouvelleValeur = "";
-        this.afficherMessageSucces("Valeur ajoutée avec succès.");
+        this.operationEnCours = true;
+        try {
+          const valeurCreee = await this._ajouterValeur(this.ongletActif, libelle);
+          this._appliquerValeurLocale(this.ongletActif, valeurCreee);
+          this.nouvelleValeur = "";
+          this.afficherMessageSucces("Valeur ajoutée avec succès.");
+        } catch (erreur) {
+          this.afficherMessageErreur(erreur.message || "Impossible d'ajouter cette valeur.");
+        } finally {
+          this.operationEnCours = false;
+        }
       },
 
       // Modification 
@@ -79,12 +82,20 @@
       },
 
       async validerModification() {
+        if (this.operationEnCours) return;
         const libelle = this.libelleEnEdition.trim();
         if (!libelle) return;
-
-        await this._modifierValeur(this.ongletActif, this.idEnEdition, libelle);
-        this.annulerModification();
-        this.afficherMessageSucces("Valeur modifiée avec succès.");
+        this.operationEnCours = true;
+        try {
+          await this._modifierValeur(this.ongletActif, this.idEnEdition, libelle);
+          this._appliquerValeurLocale(this.ongletActif, { id: this.idEnEdition, libelle });
+          this.annulerModification();
+          this.afficherMessageSucces("Valeur modifiée avec succès.");
+        } catch (erreur) {
+          this.afficherMessageErreur(erreur.message || "Impossible de modifier cette valeur.");
+        } finally {
+          this.operationEnCours = false;
+        }
       },
 
       // Suppression : refusée si la valeur est utilisée par une fiche existante 
@@ -97,6 +108,9 @@
               await this._supprimerValeur(this.ongletActif, valeur.id, () =>
                 this.valeurEstUtilisee(this.ongletActif, valeur.libelle)
               );
+              this.valeursParReferentiel[this.ongletActif] = (
+                this.valeursParReferentiel[this.ongletActif] || []
+              ).filter((v) => v.id !== valeur.id);
               this.afficherMessageSucces("Valeur supprimée.");
             } catch (erreur) {
               this.afficherMessageErreur(erreur.message);
@@ -110,9 +124,16 @@
       },
 
       async confirmerSuppression() {
+        if (this.operationEnCours) return;
         const action = this.confirmationSuppression.action;
         this.confirmationSuppression = { ouverte: false, message: "", action: null };
-        if (action) await action();
+        if (!action) return;
+        this.operationEnCours = true;
+        try {
+          await action();
+        } finally {
+          this.operationEnCours = false;
+        }
       },
 
       /** Une valeur ne peut être supprimée que si elle n'est utilisée par aucune fiche existante */
@@ -146,8 +167,9 @@
   window.pageReferentiels = pageReferentiels;
 </script>
 
-<div x-data="pageReferentiels()" x-init="init()">
+<div x-data="pageReferentiels()">
   <h1 class="text-lg font-semibold text-slate-800 mb-6">Gestion des référentiels</h1>
+  <div x-show="messageErreur" x-cloak class="rounded-md bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 mb-4" x-text="messageErreur"></div>
 
   <!-- Onglets, un par référentiel -->
   <div class="flex gap-1 border-b border-slate-200 mb-6 no-print flex-wrap">
@@ -171,7 +193,7 @@
     <form @submit.prevent="ajouter()" class="flex gap-2 mb-6 no-print">
       <input type="text" x-model="nouvelleValeur" placeholder="Nouvelle valeur…"
         class="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"/>
-      <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 transition-colors">Ajouter</button>
+      <button type="submit" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-md hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Ajouter</button>
     </form>
 
     <!-- Liste vide -->
@@ -197,7 +219,7 @@
             </template>
             <template x-if="idEnEdition === valeur.id">
               <div class="flex gap-3">
-                <button @click="validerModification()" class="text-sm text-slate-600 hover:text-slate-900">Valider</button>
+                <button @click="validerModification()" :disabled="operationEnCours" class="text-sm text-slate-600 hover:text-slate-900 disabled:opacity-50">Valider</button>
                 <button @click="annulerModification()" class="text-sm text-slate-500 hover:text-slate-700">Annuler</button>
               </div>
             </template>
@@ -213,7 +235,7 @@
       <p class="text-sm text-slate-700 mb-6" x-text="confirmationSuppression.message"></p>
       <div class="flex justify-end gap-2">
         <button @click="annulerSuppression()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900">Annuler</button>
-        <button @click="confirmerSuppression()" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">Supprimer</button>
+        <button @click="confirmerSuppression()" :disabled="operationEnCours" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">Supprimer</button>
       </div>
     </div>
   </div>
